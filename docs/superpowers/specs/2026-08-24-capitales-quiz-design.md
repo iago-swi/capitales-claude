@@ -37,7 +37,7 @@ Deliberately excluded to keep the first version finishable:
 | UI framework | Svelte 5 (runes) |
 | Styling | Tailwind CSS v4 (Vite plugin) |
 | Map rendering | `d3-geo` + `topojson-client`, rendered as inline SVG |
-| Geometry data | Natural Earth 110m via `world-atlas` (~100 KB TopoJSON) |
+| Geometry data | Natural Earth **50m** admin-0 countries, trimmed and converted to TopoJSON by this project's own ETL (~556 KB, measured) |
 | Database | Firebase Emulator Suite (Firestore + Auth + Emulator UI) via `firebase-tools`; client is the modular `firebase` JS SDK |
 | Game state | Pure reducer in `packages/core`, wrapped in a Svelte rune store |
 | Unit tests | Vitest |
@@ -62,6 +62,14 @@ Prerequisites already present on the target machine: Node 24, npm 11, Java 25
   logic, so switching later is a contained change.
 - **React** — considered and set aside in favour of Svelte 5. Because `core` is
   framework-free, only the ~20-line store wrapper would change.
+- **`world-atlas` at 110m resolution** — the original choice, replaced after
+  inspecting the data. 110m contains 177 country features yielding only 163
+  playable countries; it omits Singapore, Malta, Monaco, Vatican, Andorra,
+  Liechtenstein and every Caribbean and Pacific island state outright. It also
+  forces a join on ISO numeric ids, which the `-99` sentinel breaks (§5.6).
+  50m yields 193 playable countries for 556 KB and needs no cross-dataset join.
+- **REST Countries API** as the capitals source — the v3.1 endpoint is
+  deprecated and now returns an error payload instead of data.
 
 ## 4. Repository layout
 
@@ -81,13 +89,14 @@ Capitales/
 │  │  ├─ rng.ts              # seeded mulberry32
 │  │  └─ types.ts
 │  ├─ geo/                   # projection + path generation (d3-geo, no UI)
-│  │  ├─ atlas.ts            # TopoJSON load, feature lookup by ISO numeric
+│  │  ├─ atlas.ts            # TopoJSON load, feature lookup by ADM0_A3 code
 │  │  └─ project.ts          # fitCountry(feature, box) -> { pathD, dotXY }
 │  ├─ data/
-│  │  ├─ capitals.json       # committed ETL output
-│  │  ├─ overrides.json      # curated fixes for messy cases
-│  │  ├─ build-capitals.ts   # one-time ETL from Natural Earth
-│  │  └─ seed.ts             # writes countries/* into the emulator
+│  │  ├─ capitals.json        # committed ETL output: the 193 eligible countries
+│  │  ├─ countries.topo.json  # committed ETL output: trimmed 50m TopoJSON
+│  │  ├─ overrides.json       # hand-curated fixes, see §5.6
+│  │  ├─ build-data.ts        # one-time ETL from Natural Earth
+│  │  └─ seed.ts              # writes countries/* into the emulator
 │  └─ ui/                    # shared Svelte components
 │     ├─ CountryMap.svelte
 │     ├─ Timer.svelte
@@ -107,28 +116,36 @@ The dependency direction is strictly one-way:
 
 ### 5.1 Static, bundled
 
-Country geometry is **not** stored in Firestore. `countries-110m.json` is ~100 KB
+Country geometry is **not** stored in Firestore. `countries.topo.json` is ~556 KB
 of TopoJSON that never changes, so it is a bundled static asset versioned with the
-code. Features are keyed by ISO 3166-1 numeric id.
+code and committed to the repository.
+
+Features are keyed by Natural Earth's **`ADM0_A3`** code, referred to throughout
+as `code`. This is *not* the ISO numeric id, and the distinction matters:
+Natural Earth sets `ISO_A3` and `ISO_N3` to the sentinel `-99` for five entries,
+including **France and Norway**, so any join on an ISO field silently loses them.
+`ADM0_A3` is populated for every feature and unique across the dataset. It equals
+ISO 3166-1 alpha-3 for nearly all eligible countries; the handful of exceptions
+(e.g. `KOS` for Kosovo) are internal identifiers only and never shown to players.
 
 ### 5.2 Firestore model
 
 Two collections.
 
-`countries/{iso3}` — one document per **eligible country**, seeded once, read-only
-to clients. The eligible set is the 195 UN member states minus the exclusions
-listed in §5.6, so roughly 185–190 documents; the exact count is whatever
-`capitals.json` contains and is not hardcoded anywhere.
+`countries/{code}` — one document per **eligible country**, seeded once, read-only
+to clients. The eligible set is defined in §5.6 and currently contains **193**
+countries; the exact count is whatever `capitals.json` contains and is hardcoded
+nowhere.
 
 ```ts
 {
-  iso3: "FRA",
-  isoNumeric: "250",                  // join key into the TopoJSON
+  code: "FRA",                        // Natural Earth ADM0_A3, also the doc id
   name: "France",
   capital: "Paris",
-  capitalLonLat: [2.3522, 48.8566],   // GeoJSON order: [lon, lat]
-  centroid: [2.45, 46.6],             // precomputed, for projection centering
-  continent: "Europe"
+  capitalLonLat: [2.3522, 48.8586],   // GeoJSON order: [lon, lat]
+  centroid: [2.45, 46.6],             // precomputed via geoCentroid
+  continent: "Europe",
+  altCapitals: []                     // accepted-but-not-canonical names, see §5.6
 }
 ```
 
@@ -146,7 +163,7 @@ Small enough to fetch in one query at boot and cache in memory for the session.
   correctCount: number,
   bestStreak: number,
   questionCount: 10,
-  answers: [{ iso3: string, chosen: string, correct: boolean, ms: number }]
+  answers: [{ code: string, chosen: string, correct: boolean, ms: number }]
 }
 ```
 
@@ -183,10 +200,40 @@ add a run but never edit or remove one.
 
 ### 5.5 ETL and seeding
 
-`build-capitals.ts` runs once during development. It downloads the Natural Earth
-`ne_110m_populated_places` dataset, filters to `FEATURECLA == "Admin-0 capital"`,
-joins to the country list on `ADM0_A3`, applies `overrides.json`, and writes
-`capitals.json`. The output is committed, so every later build is offline.
+`build-data.ts` runs once during development. It is the only step that needs the
+network; both of its outputs are committed, so every later build and every test
+run is fully offline.
+
+Source datasets, both from the official `nvkelso/natural-earth-vector`
+repository at the `master` ref:
+
+- `geojson/ne_50m_admin_0_countries.geojson` — 242 features, geometry plus
+  `ADM0_A3`, `NAME`, `TYPE`, `CONTINENT`
+- `geojson/ne_50m_populated_places.geojson` — city points, of which those with
+  `FEATURECLA == "Admin-0 capital"` are national capitals
+
+Pipeline:
+
+1. Index capitals by `ADM0_A3`.
+2. Keep country features whose `TYPE` is `Country` or `Sovereign country`.
+3. Keep only those that have at least one Admin-0 capital (see §5.6 — this is the
+   filter that removes dependencies without a hand-maintained blocklist).
+4. Apply `overrides.json`: force a canonical capital where several exist, inject
+   the two missing ones, and drop explicitly excluded codes.
+5. Compute each country's `centroid` with `d3-geo`'s `geoCentroid` on its own
+   geometry, rather than trusting any dataset field.
+6. Emit `capitals.json`, sorted by `code` for stable diffs.
+7. Emit `countries.topo.json`: the same countries' geometry, stripped of all 137
+   Natural Earth properties, converted with `topojson-server`, simplified with
+   `topojson-simplify`, and quantized to a 1e5 grid.
+
+The ETL **fails loudly** if it encounters a multi-capital country or a
+capital-less sovereign country that `overrides.json` does not mention. New
+anomalies must be decided by a human, never silently dropped.
+
+`seed.ts` reads `capitals.json` and writes `countries/*` into the running
+emulator using the Admin SDK (which bypasses rules). It is idempotent: re-running
+overwrites the same document ids.
 
 `seed.ts` reads `capitals.json` and writes `countries/*` into the running
 emulator using the Admin SDK (which bypasses rules). It is idempotent: re-running
@@ -199,18 +246,49 @@ is in-memory only and wipes on exit.
 
 ### 5.6 Data edge cases
 
-Named explicitly because each will otherwise surface as a confusing bug:
+These are the actual anomalies in the 50m dataset, enumerated by inspecting it
+rather than guessed. Each would otherwise surface as a confusing bug.
 
-- **Multiple capitals.** South Africa has three (Pretoria, Cape Town,
-  Bloemfontein), Bolivia two (Sucre, La Paz). `overrides.json` names one canonical
-  answer per country and may list alternates that are also accepted.
-- **Non-sovereign entries.** The Natural Earth 110m set includes territories with
-  no capital or with disputed status (Greenland, Western Sahara, Antarctica).
-  Filtered at ETL time via an explicit include-list, so the filter is auditable
-  rather than accidental.
-- **Micro-states.** Vatican City, Monaco, San Marino and Singapore are nearly
-  invisible at 110m resolution. `fitExtent` will zoom to them, but the outline
-  degrades to a blob. They are excluded from the pool via the same include-list.
+**The `-99` sentinel.** Natural Earth sets `ISO_A3` and `ISO_N3` to `-99` for
+`NOR`, `FRA`, `CYN`, `SOL` and `KOS`. Joining on either field loses France and
+Norway silently — no error, they simply never appear in a quiz. `ADM0_A3` is used
+instead throughout (§5.1).
+
+**Multiple capitals** — four countries carry more than one `Admin-0 capital`
+point. `overrides.json` names the canonical answer; `altCapitals` holds names
+that are also accepted if chosen:
+
+| Code | Dataset lists | Canonical | Also accepted |
+|---|---|---|---|
+| `ZAF` | Pretoria, Cape Town, Bloemfontein, Johannesburg | Pretoria | Cape Town, Bloemfontein |
+| `BOL` | Sucre, La Paz | Sucre | La Paz |
+| `CIV` | Yamoussoukro, Abidjan | Yamoussoukro | Abidjan |
+| `MMR` | Naypyidaw, Yangon | Naypyidaw | — |
+
+Note that Natural Earth tags **Johannesburg** as an Admin-0 capital of South
+Africa, which it is not. Taking the first match from the dataset would therefore
+produce a wrong answer, not merely an ambiguous one.
+
+**Missing capitals** — two genuine sovereign states have no Admin-0 capital point
+at all and must be injected by `overrides.json`, or they vanish from the game:
+
+| Code | Country | Injected capital | Coordinates `[lon, lat]` |
+|---|---|---|---|
+| `SDS` | South Sudan | Juba | `[31.5825, 4.8517]` |
+| `NRU` | Nauru | Yaren | `[166.9209, -0.5477]` |
+
+**Dependencies typed as `Country`.** Thirteen entries have `TYPE == "Country"`
+but are not sovereign: Jersey, Guernsey, Isle of Man, Åland, Aruba, Curaçao,
+Sint Maarten, Greenland, Hong Kong, Macao and others. All thirteen lack an
+Admin-0 capital, so filter step 3 in §5.5 removes them for free. This is
+deliberately preferred over a hand-maintained blocklist: the filter derives from
+data the ETL already needs, so it cannot drift out of date.
+
+**Disputed entities.** `CYN` (Northern Cyprus) is excluded explicitly in
+`overrides.json`. It has no Admin-0 capital, so step 3 already drops it; the
+explicit entry documents that this is intended rather than incidental.
+
+The resulting eligible set is **193 countries**.
 
 ## 6. Game rules
 
@@ -364,8 +442,9 @@ rather than day ten.
 
 1. Scaffold: workspaces, Vite, Tailwind, emulator config. Prove
    `firebase emulators:start` runs against Java 25.
-2. `packages/data`: ETL to `capitals.json`, `overrides.json`, seed script.
-   Verify the document count in the Emulator UI matches `capitals.json`.
+2. `packages/data`: ETL producing `capitals.json` and `countries.topo.json`,
+   plus `overrides.json` and the seed script. Verify 193 documents in the
+   Emulator UI.
 3. `packages/geo` plus its tests. This is the highest-risk component.
 4. `packages/core` plus its tests.
 5. `apps/web`: playable end to end against seeded data.
