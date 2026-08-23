@@ -14,8 +14,8 @@ streak bonus, and a persisted leaderboard. It ships as three comparable variants
 built from one shared core: a desktop-browser web app, a touch-first mobile web
 app, and a native desktop window.
 
-The game runs entirely locally. The database is the Firebase Emulator Suite; no
-cloud project, no billing, no network access at play time.
+The game runs entirely locally. Data lives in a SQLite file behind a small local
+HTTP API; no cloud service, no account, no network access at play time.
 
 ## 2. Non-goals
 
@@ -24,7 +24,8 @@ Deliberately excluded to keep the first version finishable:
 - Region or difficulty selection before a run
 - Spaced repetition or per-country learning statistics
 - Review-your-mistakes screen
-- Any deployed/hosted version, real Firebase project, or non-anonymous accounts
+- Any deployed or hosted version; the API server binds to localhost only
+- User accounts, passwords or authentication of any kind (see §5.3)
 - Server-side answer grading (see §11, accepted limitations)
 - Localisation. UI text is English; country and city names come from the dataset.
 
@@ -38,16 +39,27 @@ Deliberately excluded to keep the first version finishable:
 | Styling | Tailwind CSS v4 (Vite plugin) |
 | Map rendering | `d3-geo` + `topojson-client`, rendered as inline SVG |
 | Geometry data | Natural Earth **50m** admin-0 countries, trimmed and converted to TopoJSON by this project's own ETL (~556 KB, measured) |
-| Database | Firebase Emulator Suite (Firestore + Auth + Emulator UI) via `firebase-tools`; client is the modular `firebase` JS SDK |
+| Database | **SQLite**, via Node 24's built-in `node:sqlite`. No dependency, no native build. |
+| API server | Node's built-in `node:http`. Four JSON endpoints, no framework. |
 | Game state | Pure reducer in `packages/core`, wrapped in a Svelte rune store |
-| Unit tests | Vitest |
-| Rules tests | `@firebase/rules-unit-testing` |
+| Unit and API tests | Vitest |
 | End-to-end tests | Playwright |
 | Desktop shell | Electron |
 | Monorepo | npm workspaces |
 
-Prerequisites already present on the target machine: Node 24, npm 11, Java 25
-(required by the Firebase emulators), git 2.55.
+Prerequisites already present on the target machine: Node 24, npm 11, git 2.55.
+No Java, no database server, and no runtime dependency outside Node itself for
+the data layer.
+
+`node:sqlite` is what makes this cheap. The historical reason hobby projects
+avoided SQLite in Node was `better-sqlite3`'s native build step, which on Windows
+meant node-gyp and MSVC build tools. Node 24 ships SQLite in core, so that cost
+is gone.
+
+`node:http` over Express is a deliberate call for four endpoints with no
+middleware: Vite's dev proxy removes the CORS problem, and the whole server is
+about 120 lines. If routing ever grows past trivial, swapping in Express is a
+contained change confined to one file.
 
 ### Rejected alternatives
 
@@ -70,19 +82,29 @@ Prerequisites already present on the target machine: Node 24, npm 11, Java 25
   50m yields 193 playable countries for 556 KB and needs no cross-dataset join.
 - **REST Countries API** as the capitals source — the v3.1 endpoint is
   deprecated and now returns an error payload instead of data.
+- **Firebase Emulator Suite** — the original choice, replaced after weighing it
+  against what the game actually stores: 193 immutable country records and a
+  leaderboard. Firestore's only real job would have been handing back all 193
+  records at boot, which is a database acting as a file loader. It also required
+  a Java process in a second terminal, and `orderBy('score','desc')` is a query
+  SQL does natively. What was genuinely lost is declarative security rules; §5.4
+  describes how the API replaces them.
+- **SQLite compiled to WASM, running in the page** (`@sqlite.org/sqlite-wasm`) —
+  rejected outright. It needs a Web Worker plus OPFS for persistence, which wants
+  `Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy` headers, and it
+  gives every browser its own private database. Worse, the Electron shell would
+  want native SQLite instead, so the project would carry two data layers and
+  break the one-core-three-shells design.
 
 ## 4. Repository layout
 
 ```
 Capitales/
 ├─ package.json              # npm workspaces root
-├─ firebase.json             # emulator ports
-├─ firestore.rules
-├─ .firebaserc
-├─ .emulator-data/           # persisted emulator state
+├─ .data/capitales.db        # the SQLite file, gitignored
 ├─ docs/superpowers/specs/
 ├─ packages/
-│  ├─ core/                  # PURE TypeScript — no DOM, no firebase, no svelte
+│  ├─ core/                  # PURE TypeScript — no DOM, no HTTP, no svelte
 │  │  ├─ game.ts             # state machine: rounds, timer, streak, scoring
 │  │  ├─ questions.ts        # buildQuestion(country, pool, rng) -> 4 options
 │  │  ├─ scoring.ts
@@ -91,32 +113,43 @@ Capitales/
 │  ├─ geo/                   # projection + path generation (d3-geo, no UI)
 │  │  ├─ atlas.ts            # TopoJSON load, feature lookup by ADM0_A3 code
 │  │  └─ project.ts          # fitCountry(feature, box) -> { pathD, dotXY }
-│  ├─ data/
+│  ├─ data/                  # datasets + the HTTP client the browser uses
 │  │  ├─ capitals.json        # committed ETL output: the 193 eligible countries
 │  │  ├─ countries.topo.json  # committed ETL output: trimmed 50m TopoJSON
 │  │  ├─ overrides.json       # hand-curated fixes, see §5.6
 │  │  ├─ build-data.ts        # one-time ETL from Natural Earth
-│  │  └─ seed.ts              # writes countries/* into the emulator
+│  │  └─ client.ts            # fetch wrapper around the API, no SQL here
 │  └─ ui/                    # shared Svelte components
 │     ├─ CountryMap.svelte
 │     ├─ Timer.svelte
 │     ├─ AnswerButton.svelte
 │     └─ Scoreboard.svelte
 └─ apps/
+   ├─ server/                # the only place that touches SQLite
+   │  ├─ schema.sql           # tables and indexes
+   │  ├─ db.ts                # open the file, apply schema, typed queries
+   │  ├─ routes.ts            # request -> response, no HTTP plumbing
+   │  ├─ server.ts            # node:http wiring and startup
+   │  └─ seed.ts              # loads capitals.json into the countries table
    ├─ web/                   # Vite + Svelte — desktop browser layout
    ├─ mobile/                # Vite + Svelte — touch-first layout
    └─ desktop/               # Electron main process, loads apps/web/dist
 ```
 
 The dependency direction is strictly one-way:
-`apps/* → packages/ui → packages/{core, geo, data}`. `core` imports nothing from
-`geo`, `ui`, `data`, Svelte, the DOM, or Firebase.
+`apps/{web,mobile,desktop} → packages/ui → packages/{core, geo, data}`.
+`core` imports nothing from `geo`, `ui`, `data`, Svelte, the DOM, or `node:*`.
+
+`apps/server` is the **only** module that imports `node:sqlite` or writes SQL.
+Nothing in `packages/` knows a database exists; `packages/data/client.ts` sees
+only JSON over HTTP. That boundary is what makes the browser bundle free of
+server code and keeps the swap to any other backend a single-file change.
 
 ## 5. Data
 
 ### 5.1 Static, bundled
 
-Country geometry is **not** stored in Firestore. `countries.topo.json` is ~556 KB
+Country geometry is **not** stored in the database. `countries.topo.json` is ~556 KB
 of TopoJSON that never changes, so it is a bundled static asset versioned with the
 code and committed to the repository.
 
@@ -128,75 +161,103 @@ including **France and Norway**, so any join on an ISO field silently loses them
 ISO 3166-1 alpha-3 for nearly all eligible countries; the handful of exceptions
 (e.g. `KOS` for Kosovo) are internal identifiers only and never shown to players.
 
-### 5.2 Firestore model
+### 5.2 SQL schema
 
-Two collections.
+Three tables. The whole schema lives in `apps/server/schema.sql` and is applied
+with `CREATE TABLE IF NOT EXISTS` on every server start, so there is no migration
+tooling and starting from an empty file always works.
 
-`countries/{code}` — one document per **eligible country**, seeded once, read-only
-to clients. The eligible set is defined in §5.6 and currently contains **193**
-countries; the exact count is whatever `capitals.json` contains and is hardcoded
-nowhere.
+```sql
+CREATE TABLE IF NOT EXISTS countries (
+  code          TEXT PRIMARY KEY,     -- Natural Earth ADM0_A3, see §5.1
+  name          TEXT NOT NULL,
+  capital       TEXT NOT NULL,
+  capital_lon   REAL NOT NULL,
+  capital_lat   REAL NOT NULL,
+  centroid_lon  REAL NOT NULL,
+  centroid_lat  REAL NOT NULL,
+  continent     TEXT NOT NULL,
+  alt_capitals  TEXT NOT NULL DEFAULT '[]'   -- JSON array of strings
+) STRICT;
 
-```ts
-{
-  code: "FRA",                        // Natural Earth ADM0_A3, also the doc id
-  name: "France",
-  capital: "Paris",
-  capitalLonLat: [2.3522, 48.8586],   // GeoJSON order: [lon, lat]
-  centroid: [2.45, 46.6],             // precomputed via geoCentroid
-  continent: "Europe",
-  altCapitals: []                     // accepted-but-not-canonical names, see §5.6
-}
+CREATE TABLE IF NOT EXISTS runs (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_name    TEXT NOT NULL,
+  score          INTEGER NOT NULL,
+  correct_count  INTEGER NOT NULL,
+  best_streak    INTEGER NOT NULL,
+  question_count INTEGER NOT NULL,
+  started_at     TEXT NOT NULL,
+  finished_at    TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS run_answers (
+  run_id    INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  position  INTEGER NOT NULL,          -- 0-based index within the run
+  code      TEXT NOT NULL,
+  chosen    TEXT,                      -- NULL on a timeout
+  correct   INTEGER NOT NULL,          -- 0 or 1; SQLite has no boolean
+  ms        INTEGER NOT NULL,
+  PRIMARY KEY (run_id, position)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_runs_score ON runs (score DESC);
 ```
 
-Small enough to fetch in one query at boot and cache in memory for the session.
+Three decisions worth stating:
 
-`runs/{runId}` — one document per completed game, append-only:
+**Coordinates are separate `REAL` columns**, not a JSON blob. They are the only
+values the app might ever want to query on, and a column is free.
 
-```ts
-{
-  uid: string,
-  playerName: string,
-  startedAt: Timestamp,
-  finishedAt: Timestamp,
-  score: number,
-  correctCount: number,
-  bestStreak: number,
-  questionCount: 10,
-  answers: [{ code: string, chosen: string, correct: boolean, ms: number }]
-}
-```
+**`alt_capitals` stays JSON.** It is a short list read as a unit and never
+filtered on, so a fourth table would be ceremony.
 
-Ten answers as an inline array is far below the 1 MB document limit, so no
-subcollection is needed.
+**`run_answers` is normalised** even though §2 rules out learning statistics.
+This is a deliberate, cheap departure from YAGNI: it is one extra table and one
+insert loop, and it preserves the ability to ask "which capitals do I keep
+getting wrong" later without a migration. Throwing the per-answer detail into an
+unqueryable blob would discard the main reason to prefer SQL here.
 
-The leaderboard is `orderBy('score', 'desc').limit(10)` over `runs`. There is no
-separate `scores` collection to keep in sync.
+`STRICT` tables are worth having: without them SQLite happily stores the string
+`"banana"` in an `INTEGER` column. They turn a whole class of silent data
+corruption into an immediate error.
 
-### 5.3 Auth
+### 5.3 Identity
 
-Anonymous sign-in against the Auth emulator. No login screen, but every player
-gets a stable `uid`, which the security rules require. A nickname is requested
-once and denormalised onto each run document.
+There is none, deliberately. The server binds to `127.0.0.1` only, so the sole
+client is the person sitting at the machine. A player types a nickname once; it
+is stored on the run row and used for nothing but display. No accounts, no
+passwords, no sessions, no tokens.
 
-### 5.4 Security rules
+### 5.4 API surface and the append-only guarantee
 
-Enforced by the emulator, and tested.
+The server exposes four endpoints on port **8787**, all under `/api`:
 
-```
-match /countries/{id} {
-  allow read: if request.auth != null;
-  allow write: if false;
-}
-match /runs/{id} {
-  allow read: if true;
-  allow create: if request.auth.uid == request.resource.data.uid;
-  allow update, delete: if false;
-}
-```
+| Method | Path | Returns |
+|---|---|---|
+| `GET` | `/api/health` | `{ ok: true, countries: 193 }` |
+| `GET` | `/api/countries` | `Country[]` — all 193, one query |
+| `POST` | `/api/runs` | `{ id: number }` — records one finished game |
+| `GET` | `/api/leaderboard?limit=10` | `RunSummary[]`, highest score first |
 
-`allow update, delete: if false` is what makes scores append-only: a player can
-add a run but never edit or remove one.
+This is the replacement for Firestore security rules, and it is worth being
+explicit about how the guarantee is achieved, because it is now structural rather
+than declarative:
+
+- **Countries are read-only** because no route writes to that table. The seed
+  script is a separate process, not an endpoint.
+- **Runs are append-only** because there is no `PUT`, `PATCH` or `DELETE` route
+  anywhere. A client cannot edit a past score because the verb does not exist.
+- Any unknown method or path returns `404`, and a malformed body returns `400`.
+
+Firestore's `allow update, delete: if false` was four declarative lines; here the
+same property comes from the absence of code, which is harder to see in a diff.
+The API tests in §12 therefore assert the negative directly — that `PUT` and
+`DELETE` against an existing run are rejected — so the guarantee is checked
+rather than assumed.
+
+Writing a run inserts into `runs` and `run_answers` inside **one transaction**,
+so a failure part-way cannot leave a run with half its answers.
 
 ### 5.5 ETL and seeding
 
@@ -231,18 +292,14 @@ The ETL **fails loudly** if it encounters a multi-capital country or a
 capital-less sovereign country that `overrides.json` does not mention. New
 anomalies must be decided by a human, never silently dropped.
 
-`seed.ts` reads `capitals.json` and writes `countries/*` into the running
-emulator using the Admin SDK (which bypasses rules). It is idempotent: re-running
-overwrites the same document ids.
+`apps/server/seed.ts` reads `capitals.json` and upserts it into the `countries`
+table with `INSERT ... ON CONFLICT(code) DO UPDATE`. It is idempotent: re-running
+refreshes the same 193 rows rather than duplicating them, and it never touches
+`runs`, so re-seeding after a data fix does not wipe the leaderboard.
 
-`seed.ts` reads `capitals.json` and writes `countries/*` into the running
-emulator using the Admin SDK (which bypasses rules). It is idempotent: re-running
-overwrites the same document ids.
-
-Emulator state persists via
-`firebase emulators:start --import ./.emulator-data --export-on-exit`, so seeded
-data and leaderboard entries survive a restart. Without those flags the emulator
-is in-memory only and wipes on exit.
+Persistence is simply a file. `.data/capitales.db` survives restarts because it
+is a file on disk, with no export or import step. It is gitignored; `npm run seed`
+recreates the country rows from committed inputs at any time.
 
 ### 5.6 Data edge cases
 
@@ -384,18 +441,18 @@ projection maths of its own.
 
 All three import identical `core`, `geo` and `data`. `packages/ui` supplies the
 primitives; each app composes its own layout and CSS. The desktop shell points
-its Firestore client at the same emulator on `127.0.0.1`.
+its API client at the same server on `127.0.0.1:8787`.
 
 ## 10. Error handling
 
 | Failure | Behaviour |
 |---|---|
-| Emulator not running | The Firestore SDK retries silently and indefinitely, producing a blank screen with no error. A bounded startup probe times out and shows "Emulator not reachable at 127.0.0.1:8080 — run `npm run emulators`". |
-| `countries` collection empty | Detected at boot: "Database not seeded — run `npm run seed`". |
+| API server not running | `fetch` to a closed port fails fast with a `TypeError`, so a bounded probe of `/api/health` at boot shows "API server not reachable at 127.0.0.1:8787 — run `npm run server`". |
+| `countries` table empty | `/api/health` reports `countries: 0`, detected at boot: "Database not seeded — run `npm run seed`". |
 | TopoJSON asset fails to load | Hard error screen at boot. |
-| A seeded country has no matching geometry | Dropped from the pool at boot with a console warning. |
+| A country row has no matching geometry | Dropped from the pool at boot with a console warning. |
 | Saving a finished run fails | The score stays on screen, a banner reports the failure, and a retry button re-attempts the write. |
-| Anonymous sign-in fails | Same treatment as the emulator being unreachable. |
+| The server throws on a request | Logged with the failing route, and returned as a `500` with a JSON `{ error }` body — never an HTML stack trace. |
 
 The governing principle: **fail loud at boot, fail soft during play.** A data
 problem must never crash a run in progress, and a finished run must never be lost
@@ -403,11 +460,15 @@ to a write error.
 
 ## 11. Accepted limitations
 
-Because `countries` holds the capital name and the client fetches every eligible
-country document at boot, the correct answer is present in browser memory before
-the player clicks. This is accepted deliberately. Preventing it would require a Cloud
-Function grading answers server-side, which is substantial complexity for no
-benefit in a local single-player game.
+Because `/api/countries` returns the capital name and the client fetches every
+eligible country at boot, the correct answer is present in browser memory before
+the player clicks. The same is true of the score: the client computes it and the
+server records whatever it is told.
+
+Both are accepted deliberately. Closing either would mean the server holding the
+questions and grading answers, which is substantial complexity for no benefit in
+a local single-player game where the only person who could cheat is the person
+who wants to play.
 
 ## 12. Testing
 
@@ -422,43 +483,54 @@ benefit in a local single-player game.
   Paris's `dotXY` falls inside that bounding box. This assertion catches the
   classic `[lat, lon]` versus `[lon, lat]` swap: swapped, Paris projects into the
   Indian Ocean and lands far outside the frame.
-- **Rules** — `@firebase/rules-unit-testing`: client A cannot create a run
-  claiming client B's uid; no client can update or delete an existing run;
-  unauthenticated reads of `countries` are denied.
-- **End-to-end** — Playwright against `apps/web` with the emulators running:
+- **`apps/server`** — Vitest. The server is started in-process on an ephemeral
+  port against an **in-memory** SQLite database (`:memory:`), and driven with
+  plain `fetch`. No external process, no fixture files, no cleanup: every test
+  file gets a pristine database for free. Asserts: `/api/countries` returns the
+  seeded rows; posting a run persists it together with its answers; the
+  leaderboard sorts by score descending and respects `limit`; a malformed body
+  is rejected with `400`; an unknown path returns `404`; and — checking the
+  append-only guarantee of §5.4 directly — `PUT` and `DELETE` against an existing
+  run are both rejected.
+- **End-to-end** — Playwright against `apps/web` with the API server running:
   play a complete ten-question run by clicking the first option each time, assert
-  the finish screen renders, and assert a `runs` document exists in Firestore.
+  the finish screen renders, and assert the run appears in the leaderboard.
+
+Because the database runs in-process, the entire suite except Playwright is a
+single `npm test` with nothing to start first.
 
 ## 13. Local development workflow
 
 | Script | Command |
 |---|---|
-| `npm run emulators` | `firebase emulators:start --import ./.emulator-data --export-on-exit` |
-| `npm run seed` | seeds `countries/*` into the running emulator |
-| `npm run build:capitals` | re-runs the ETL (rarely needed; output is committed) |
-| `npm run dev` | Vite dev server for `apps/web` |
+| `npm run server` | starts the API server on 8787 against `.data/capitales.db` |
+| `npm run seed` | upserts `capitals.json` into the `countries` table |
+| `npm run build:data` | re-runs the ETL (rarely needed; output is committed) |
+| `npm run dev` | Vite dev server for `apps/web`, proxying `/api` to 8787 |
 | `npm run dev:mobile` | Vite dev server for `apps/mobile` |
 | `npm run dev:desktop` | builds `apps/web` and launches Electron |
-| `npm test` | Vitest across `core` and `geo` |
-| `npm run test:rules` | Firestore rules tests |
+| `npm test` | Vitest across `core`, `geo`, `data` and `server` |
 | `npm run e2e` | Playwright |
 
-Emulator ports: Firestore 8080, Auth 9099, Emulator UI 4000.
+The API server listens on `127.0.0.1:8787`. Vite proxies `/api` to it, so the
+browser sees a single origin and CORS never enters the picture.
+
+`npm run seed` requires nothing to be running: it opens the database file
+directly. Only the browser needs the server.
 
 ## 14. Build order
 
 Risky and load-bearing work first, so that a wrong assumption surfaces on day one
 rather than day ten.
 
-1. Scaffold: workspaces, Vite, Tailwind, emulator config. Prove
-   `firebase emulators:start` runs against Java 25.
+1. Scaffold: workspaces, Vite, Tailwind, TypeScript config.
 2. `packages/data`: ETL producing `capitals.json` and `countries.topo.json`,
-   plus `overrides.json` and the seed script. Verify 193 documents in the
-   Emulator UI.
-3. `packages/geo` plus its tests. This is the highest-risk component.
-4. `packages/core` plus its tests.
-5. `apps/web`: playable end to end against seeded data.
-6. Firestore run writes, leaderboard query, security rules, rules tests.
+   plus `overrides.json`.
+3. `apps/server`: schema, seed script, and the four endpoints, with API tests.
+   Verify 193 rows.
+4. `packages/geo` plus its tests. This is the highest-risk component.
+5. `packages/core` plus its tests.
+6. `apps/web`: playable end to end, run writes and leaderboard included.
 7. `apps/mobile`.
 8. `apps/desktop` Electron shell.
 9. Playwright end-to-end suite.
