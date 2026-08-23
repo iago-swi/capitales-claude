@@ -277,16 +277,26 @@ at all and must be injected by `overrides.json`, or they vanish from the game:
 | `SDS` | South Sudan | Juba | `[31.5825, 4.8517]` |
 | `NRU` | Nauru | Yaren | `[166.9209, -0.5477]` |
 
-**Dependencies typed as `Country`.** Thirteen entries have `TYPE == "Country"`
+**Dependencies typed as `Country`.** Exactly ten entries have `TYPE == "Country"`
 but are not sovereign: Jersey, Guernsey, Isle of Man, Åland, Aruba, Curaçao,
-Sint Maarten, Greenland, Hong Kong, Macao and others. All thirteen lack an
-Admin-0 capital, so filter step 3 in §5.5 removes them for free. This is
-deliberately preferred over a hand-maintained blocklist: the filter derives from
-data the ETL already needs, so it cannot drift out of date.
+Sint Maarten, Greenland, Hong Kong and Macao. All ten lack an Admin-0 capital, so
+filter step 3 in §5.5 removes them for free. This is deliberately preferred over a
+hand-maintained blocklist: the filter derives from data the ETL already needs, so
+it cannot drift out of date.
 
 **Disputed entities.** `CYN` (Northern Cyprus) is excluded explicitly in
 `overrides.json`. It has no Admin-0 capital, so step 3 already drops it; the
 explicit entry documents that this is intended rather than incidental.
+
+Together these give the ETL a precise, loud rule. Of the thirteen entries with no
+Admin-0 capital, exactly three are typed `Sovereign country` — `SDS`, `NRU` and
+`CYN` — and all three are named in `overrides.json`. So:
+
+- no capital **and** `TYPE == "Country"` → a dependency; skip and log
+- no capital **and** `TYPE == "Sovereign country"` **and** not in `overrides.json`
+  → **throw**, because a real country is about to disappear silently
+
+That second rule is what would have caught South Sudan.
 
 The resulting eligible set is **193 countries**.
 
