@@ -1,7 +1,11 @@
 node_modules/
 dist/
-.emulator-data/
 *.log
-firebase-debug.log
-firestore-debug.log
-ui-debug.log
+
+# SQLite database — derived state, rebuilt by `npm run seed`
+.data/
+
+*.tsbuildinfo
+
+# Downloaded Natural Earth sources; the ETL *outputs* are committed
+packages/data/.cache/
