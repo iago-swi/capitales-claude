@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a complete, tested, playable capital-cities quiz that runs in the browser against a local Firebase emulator, with a persisted leaderboard.
+**Goal:** Build a complete, tested, playable capital-cities quiz that runs in the browser against a local SQLite database, with a persisted leaderboard.
 
-**Architecture:** An npm-workspaces monorepo with a framework-free core. `packages/core` holds pure game logic (RNG, question generation, scoring, a clock-free reducer) and imports nothing from the DOM, Svelte or Firebase. `packages/geo` turns country geometry into SVG path strings via `d3-geo`. `packages/data` owns the Natural Earth ETL, the Firestore seed script, and the Firebase client wrapper. `packages/ui` holds Svelte primitives, and `apps/web` composes them. Later plans add the mobile and Electron shells over the same core without touching it.
+**Architecture:** An npm-workspaces monorepo with a framework-free core. `packages/core` holds pure game logic (RNG, question generation, scoring, a clock-free reducer) and imports nothing from the DOM, Svelte, HTTP or `node:*`. `packages/geo` turns country geometry into SVG path strings via `d3-geo`. `packages/data` owns the Natural Earth ETL and a `fetch` wrapper around the API — no SQL. `apps/server` is the only module that touches SQLite: three tables, four JSON endpoints, no framework. `packages/ui` holds Svelte primitives, and `apps/web` composes them. Later plans add the mobile and Electron shells over the same core without touching it.
 
-**Tech Stack:** TypeScript, Vite, Svelte 5 (runes), Tailwind CSS v4, `d3-geo`, `topojson-client`/`-server`/`-simplify`, Firebase Emulator Suite (Firestore + Auth), `firebase` + `firebase-admin` SDKs, Vitest, `@firebase/rules-unit-testing`.
+**Tech Stack:** TypeScript, Vite, Svelte 5 (runes), Tailwind CSS v4, `d3-geo`, `topojson-client`/`-server`/`-simplify`, Node 24's built-in `node:sqlite` and `node:http`, Vitest.
 
 **Spec:** `docs/superpowers/specs/2026-08-24-capitales-quiz-design.md`
 
@@ -14,28 +14,30 @@
 
 ## Global Constraints
 
-- **Node 24, npm 11, Java 25** are the target toolchain. Java is required by the Firebase emulators.
+- **Node 24 and npm 11** are the target toolchain. `node:sqlite` requires Node 22+; this plan assumes 24. No Java, no database server, no native build step.
 - **Never hand-write dependency version ranges.** Install with `npm install` / `npm install -D` and let npm write the resolved versions into `package.json`. Fabricated version ranges are a plan failure.
-- **Firebase project id is `demo-capitales`.** The `demo-` prefix is load-bearing: project ids starting with `demo-` are emulator-only and require no credentials, no real project, and no billing.
-- **Emulator ports:** Firestore `8080`, Auth `9099`, Emulator UI `4000`.
+- **API server listens on `127.0.0.1:8787`.** Localhost only — it is never bound to a public interface. Vite proxies `/api` to it so the browser sees one origin and CORS never arises.
+- **The database file is `.data/capitales.db`**, gitignored. Tests use `:memory:` instead and never touch it.
+- **`apps/server` is the only module that may import `node:sqlite` or write SQL.** `packages/data` speaks JSON over HTTP and nothing else. A reviewer should reject any task that leaks SQL into `packages/`.
+- **No `PUT`, `PATCH` or `DELETE` route may be added.** Runs are append-only, and with no security-rules layer that guarantee comes from the absence of those verbs. Task 10 tests it directly.
 - **The country key is `code`**, holding Natural Earth's `ADM0_A3`. Never join on `ISO_A3` or `ISO_N3` — Natural Earth sets both to the sentinel `-99` for `FRA`, `NOR`, `CYN`, `SOL` and `KOS`, so an ISO join loses France and Norway with no error.
-- **Coordinates are always `[lon, lat]`**, GeoJSON order, everywhere in this codebase. Natural Earth's `LATITUDE`/`LONGITUDE` properties and most APIs use the opposite order. Convert at the ETL boundary and never again.
-- **`packages/core` imports nothing** from `geo`, `data`, `ui`, Svelte, the DOM, or Firebase. A reviewer should reject any task that violates this.
+- **Coordinates are always `[lon, lat]`**, GeoJSON order, everywhere in this codebase. Natural Earth's `LATITUDE`/`LONGITUDE` properties and most APIs use the opposite order. Convert at the ETL boundary and never again. The SQL schema stores them as separate `capital_lon` / `capital_lat` columns precisely so the order cannot be transposed by accident.
+- **`packages/core` imports nothing** from `geo`, `data`, `ui`, Svelte, the DOM, or `node:*`. A reviewer should reject any task that violates this.
 - **The reducer never calls `Date.now()`.** Timestamps arrive on events.
 - **Eligible country count is 193.** It lives in `capitals.json` and is asserted in exactly one test; it is hardcoded nowhere in application code.
 - **TDD throughout:** write the failing test, run it, watch it fail for the right reason, implement minimally, run it again, commit.
 
 ---
 
-### Task 1: Workspace scaffold and a running emulator
+### Task 1: Workspace scaffold
 
 **Files:**
-- Create: `package.json`, `tsconfig.base.json`, `vitest.config.ts`, `firebase.json`, `.firebaserc`, `firestore.rules`, `README.md`
+- Create: `package.json`, `tsconfig.base.json`, `vitest.config.ts`, `README.md`
 - Modify: `.gitignore`
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: the npm workspace roots `packages/*` and `apps/*`; the scripts `npm run emulators` and `npm test`; the Firebase project id `demo-capitales`.
+- Produces: the npm workspace roots `packages/*` and `apps/*`; the `npm test` script.
 
 - [ ] **Step 1: Create the root `package.json`**
 
@@ -46,7 +48,6 @@
   "type": "module",
   "workspaces": ["packages/*", "apps/*"],
   "scripts": {
-    "emulators": "firebase emulators:start --import ./.emulator-data --export-on-exit",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.base.json --noEmit"
@@ -59,8 +60,20 @@
 Let npm resolve every version. Do not edit the version ranges afterwards.
 
 ```bash
-npm install -D typescript tsx vitest firebase-tools
+npm install -D typescript tsx vitest @types/node
 ```
+
+Note what is *not* here: no database driver, no server framework. `node:sqlite` and `node:http` are part of Node 24.
+
+- [ ] **Step 2a: Confirm `node:sqlite` is available**
+
+Before anything is built on it, verify the assumption this whole plan rests on:
+
+```bash
+node -e "const {DatabaseSync}=require('node:sqlite');const d=new DatabaseSync(':memory:');d.exec('CREATE TABLE t(x INT)');d.prepare('INSERT INTO t VALUES (?)').run(1);console.log('node:sqlite ok',d.prepare('SELECT x FROM t').all())"
+```
+
+Expected: `node:sqlite ok [ { x: 1 } ]`. If this errors with "Cannot find module 'node:sqlite'", the Node version is below 22 — stop and upgrade before continuing.
 
 - [ ] **Step 3: Create `tsconfig.base.json`**
 
@@ -91,95 +104,41 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['packages/**/src/**/*.test.ts'],
+    // Both roots: packages/* hold the pure logic, apps/server holds the API
+    // tests. A pattern covering only packages/ would silently run zero server
+    // tests and still report success.
+    include: ['{packages,apps}/**/src/**/*.test.ts'],
+    exclude: ['**/node_modules/**', '**/dist/**'],
     environment: 'node',
   },
 });
 ```
 
-- [ ] **Step 5: Create the Firebase configuration**
+Everything runs in one suite with nothing started beforehand: the pure packages need no I/O, and the server tests bind an ephemeral port against an in-memory database.
 
-`.firebaserc`:
-
-```json
-{ "projects": { "default": "demo-capitales" } }
-```
-
-`firebase.json`:
-
-```json
-{
-  "firestore": { "rules": "firestore.rules" },
-  "emulators": {
-    "auth": { "port": 9099 },
-    "firestore": { "port": 8080 },
-    "ui": { "enabled": true, "port": 4000 },
-    "singleProjectMode": true
-  }
-}
-```
-
-`firestore.rules` — the final rules from spec §5.4, written now because the Admin SDK used for seeding bypasses them anyway:
-
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /countries/{code} {
-      allow read: if request.auth != null;
-      allow write: if false;
-    }
-    match /runs/{runId} {
-      allow read: if true;
-      allow create: if request.auth != null
-                    && request.auth.uid == request.resource.data.uid;
-      allow update, delete: if false;
-    }
-  }
-}
-```
-
-- [ ] **Step 6: Extend `.gitignore`**
+- [ ] **Step 5: Extend `.gitignore`**
 
 Append these lines to the existing file:
 
 ```
-.firebase/
+.data/
 *.tsbuildinfo
 packages/data/.cache/
 ```
 
+`.data/` holds the SQLite database. It is derived state: `npm run seed` rebuilds the country rows from committed inputs at any time, and the leaderboard is personal rather than something to version.
+
 `packages/data/.cache/` will hold the downloaded Natural Earth source files in Task 3. They are large and re-downloadable, so they stay out of git; the ETL *outputs* are committed.
 
-- [ ] **Step 7: Start the emulator and verify it is reachable**
-
-Run in one terminal:
+- [ ] **Step 6: Verify the toolchain end to end**
 
 ```bash
-npm run emulators
+npx tsc -p tsconfig.base.json --noEmit && npx vitest run --passWithNoTests
 ```
 
-Expected: startup logs listing Firestore on `8080`, Auth on `9099`, UI on `4000`. The `--import ./.emulator-data` flag warns that the directory does not exist yet; that is expected on first run and harmless.
+Expected: no type errors, and Vitest reporting no test files yet. This proves the config files parse before any code depends on them.
 
-In a second terminal, verify something is actually listening:
-
-```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/
-```
-
-Expected: a numeric HTTP status (200). A `curl: (7) Failed to connect` means the emulator is not up.
-
-- [ ] **Step 8: Stop the emulator and confirm state was exported**
-
-Press Ctrl-C in the emulator terminal, then:
-
-```bash
-ls .emulator-data
-```
-
-Expected: a `firebase-export-metadata.json` and at least one export subdirectory. If `.emulator-data` does not exist, `--export-on-exit` did not fire — re-check `firebase.json` before continuing, because every later task depends on persistence working.
-
-- [ ] **Step 9: Write `README.md`**
+- [ ] **Step 7: Write `README.md`**
 
 ```markdown
 # Capitales
@@ -191,32 +150,37 @@ Remake of a Visual Basic game from ~1996.
 
 ## Requirements
 
-Node 24+, npm 11+, Java 21+ (required by the Firebase emulators).
+Node 24+ and npm 11+. Nothing else — the database is SQLite via Node's
+built-in `node:sqlite`, so there is no server to install and no Java.
 
 ## Running
 
-Two terminals. First:
-
-    npm run emulators
-
-Then, once only, to load the country data:
+Once, to load the country data:
 
     npm run seed
 
-Then:
+Then two terminals:
 
-    npm run dev
+    npm run server     # API on http://127.0.0.1:8787
+    npm run dev        # app on http://localhost:5173
+
+## Testing
+
+    npm test
+
+Everything runs in-process against an in-memory database. Nothing to start
+first.
 
 ## Design
 
 See `docs/superpowers/specs/2026-08-24-capitales-quiz-design.md`.
 ```
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add package.json package-lock.json tsconfig.base.json vitest.config.ts firebase.json .firebaserc firestore.rules .gitignore README.md
-git commit -m "chore: scaffold workspace and firebase emulator config"
+git add package.json package-lock.json tsconfig.base.json vitest.config.ts .gitignore README.md
+git commit -m "chore: scaffold npm workspace"
 ```
 
 ---
@@ -431,7 +395,7 @@ Produces the two committed data artifacts. This is the only step that touches th
 export type LonLat = [number, number];
 
 export interface Country {
-  /** Natural Earth ADM0_A3. Also the Firestore document id. */
+  /** Natural Earth ADM0_A3. Also the countries table primary key. */
   code: string;
   name: string;
   /** The one answer counted as correct. */
@@ -443,7 +407,41 @@ export interface Country {
   /** Other names also accepted if chosen, e.g. Cape Town for South Africa. */
   altCapitals: string[];
 }
+
+/** One answered question within a run. */
+export interface AnswerRecord {
+  code: string;
+  /** The city the player picked, or null on a timeout. */
+  chosen: string | null;
+  correct: boolean;
+  ms: number;
+}
+
+/** One finished game, as POSTed to the API. */
+export interface RunInput {
+  playerName: string;
+  score: number;
+  correctCount: number;
+  bestStreak: number;
+  questionCount: number;
+  /** ISO 8601. */
+  startedAt: string;
+  answers: AnswerRecord[];
+}
+
+/** One leaderboard row, as returned by the API. */
+export interface RunSummary {
+  id: number;
+  playerName: string;
+  score: number;
+  correctCount: number;
+  bestStreak: number;
+  /** ISO 8601. */
+  finishedAt: string;
+}
 ```
+
+`AnswerRecord`, `RunInput` and `RunSummary` live here rather than in `game.ts` because both the server and the browser client need them, and `types.ts` is the one module with no runtime dependencies at all. Task 9's reducer imports `AnswerRecord` from here rather than declaring its own.
 
 Add to `packages/core/src/index.ts`:
 
@@ -867,111 +865,607 @@ git commit -m "feat(data): add Natural Earth 50m ETL producing 193 countries"
 
 ---
 
-### Task 4: Seed the emulator
+### Task 4: Database schema and seeding
 
 **Files:**
-- Create: `packages/data/src/seed.ts`
+- Create: `apps/server/package.json`, `apps/server/src/schema.sql`, `apps/server/src/db.ts`, `apps/server/src/seed.ts`
 - Modify: root `package.json` (add the `seed` script)
+- Test: `apps/server/src/db.test.ts`
 
 **Interfaces:**
-- Consumes: `packages/data/capitals.json`.
-- Produces: a populated `countries` collection in the Firestore emulator; the `npm run seed` script.
+- Consumes: `Country`, `RunInput`, `RunSummary` from `@capitales/core`; `capitals.json` from `@capitales/data`.
+- Produces, all from `apps/server/src/db.ts`:
+  - `openDb(file: string): DatabaseSync`
+  - `countCountries(db: DatabaseSync): number`
+  - `listCountries(db: DatabaseSync): Country[]`
+  - `seedCountries(db: DatabaseSync, countries: readonly Country[]): number`
+  - `insertRun(db: DatabaseSync, run: RunInput): number`
+  - `topRuns(db: DatabaseSync, limit: number): RunSummary[]`
 
-- [ ] **Step 1: Install the Admin SDK**
+- [ ] **Step 1: Create the server package**
 
-```bash
-npm install -w @capitales/data firebase-admin
+`apps/server/package.json`:
+
+```json
+{
+  "name": "@capitales/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@capitales/core": "*",
+    "@capitales/data": "*"
+  }
+}
 ```
 
-- [ ] **Step 2: Write the seed script**
+Nothing to install: `node:sqlite` and `node:http` ship with Node 24.
 
-`packages/data/src/seed.ts`:
+- [ ] **Step 2: Write the schema**
+
+`apps/server/src/schema.sql` — spec §5.2 verbatim:
+
+```sql
+CREATE TABLE IF NOT EXISTS countries (
+  code          TEXT PRIMARY KEY,
+  name          TEXT NOT NULL,
+  capital       TEXT NOT NULL,
+  capital_lon   REAL NOT NULL,
+  capital_lat   REAL NOT NULL,
+  centroid_lon  REAL NOT NULL,
+  centroid_lat  REAL NOT NULL,
+  continent     TEXT NOT NULL,
+  alt_capitals  TEXT NOT NULL DEFAULT '[]'
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS runs (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_name    TEXT NOT NULL,
+  score          INTEGER NOT NULL,
+  correct_count  INTEGER NOT NULL,
+  best_streak    INTEGER NOT NULL,
+  question_count INTEGER NOT NULL,
+  started_at     TEXT NOT NULL,
+  finished_at    TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS run_answers (
+  run_id    INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  position  INTEGER NOT NULL,
+  code      TEXT NOT NULL,
+  chosen    TEXT,
+  correct   INTEGER NOT NULL,
+  ms        INTEGER NOT NULL,
+  PRIMARY KEY (run_id, position)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_runs_score ON runs (score DESC);
+```
+
+Two things here are load-bearing. `STRICT` makes SQLite reject a value of the wrong type instead of storing it silently — without it the string `"banana"` goes into an `INTEGER` column happily. And `IF NOT EXISTS` everywhere means the schema can be re-applied on every start, so there is no migration tool and an empty file always works.
+
+- [ ] **Step 3: Write the failing test**
+
+`apps/server/src/db.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import type { Country, RunInput } from '@capitales/core';
+import {
+  countCountries,
+  insertRun,
+  listCountries,
+  openDb,
+  seedCountries,
+  topRuns,
+} from './db.js';
+
+function fixture(code: string, capital: string, alt: string[] = []): Country {
+  return {
+    code,
+    name: `Name of ${code}`,
+    capital,
+    capitalLonLat: [2.3522, 48.8566],
+    centroid: [2.45, 46.6],
+    continent: 'Europe',
+    altCapitals: alt,
+  };
+}
+
+function run(overrides: Partial<RunInput> = {}): RunInput {
+  return {
+    playerName: 'Philippe',
+    score: 2400,
+    correctCount: 8,
+    bestStreak: 4,
+    questionCount: 10,
+    startedAt: '2026-08-24T10:00:00.000Z',
+    answers: [
+      { code: 'FRA', chosen: 'Paris', correct: true, ms: 1200 },
+      { code: 'DEU', chosen: null, correct: false, ms: 15000 },
+    ],
+    ...overrides,
+  };
+}
+
+function fresh() {
+  return openDb(':memory:');
+}
+
+describe('openDb', () => {
+  it('creates all three tables', () => {
+    const names = fresh()
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .all()
+      .map((r) => (r as { name: string }).name);
+    expect(names).toContain('countries');
+    expect(names).toContain('runs');
+    expect(names).toContain('run_answers');
+  });
+
+  it('enables foreign key enforcement', () => {
+    const row = fresh().prepare('PRAGMA foreign_keys').get() as {
+      foreign_keys: number;
+    };
+    expect(row.foreign_keys).toBe(1);
+  });
+
+  it('can be opened repeatedly over the same schema', () => {
+    fresh();
+    expect(() => fresh()).not.toThrow();
+  });
+});
+
+describe('seedCountries', () => {
+  it('inserts every country and reports the count', () => {
+    const db = fresh();
+    const written = seedCountries(db, [
+      fixture('FRA', 'Paris'),
+      fixture('DEU', 'Berlin'),
+    ]);
+    expect(written).toBe(2);
+    expect(countCountries(db)).toBe(2);
+  });
+
+  it('is idempotent rather than duplicating', () => {
+    const db = fresh();
+    const rows = [fixture('FRA', 'Paris'), fixture('DEU', 'Berlin')];
+    seedCountries(db, rows);
+    seedCountries(db, rows);
+    expect(countCountries(db)).toBe(2);
+  });
+
+  it('updates changed values on re-seed', () => {
+    const db = fresh();
+    seedCountries(db, [fixture('BOL', 'La Paz')]);
+    seedCountries(db, [fixture('BOL', 'Sucre')]);
+    expect(listCountries(db)[0]?.capital).toBe('Sucre');
+  });
+
+  it('starts from zero on an empty database', () => {
+    expect(countCountries(fresh())).toBe(0);
+  });
+});
+
+describe('listCountries', () => {
+  it('round-trips coordinates in [lon, lat] order', () => {
+    const db = fresh();
+    seedCountries(db, [fixture('FRA', 'Paris')]);
+    const [france] = listCountries(db);
+    expect(france?.capitalLonLat).toEqual([2.3522, 48.8566]);
+    expect(france?.centroid).toEqual([2.45, 46.6]);
+  });
+
+  it('round-trips altCapitals through JSON', () => {
+    const db = fresh();
+    seedCountries(db, [
+      fixture('ZAF', 'Pretoria', ['Cape Town', 'Bloemfontein']),
+    ]);
+    expect(listCountries(db)[0]?.altCapitals).toEqual([
+      'Cape Town',
+      'Bloemfontein',
+    ]);
+  });
+
+  it('defaults altCapitals to an empty array', () => {
+    const db = fresh();
+    seedCountries(db, [fixture('FRA', 'Paris')]);
+    expect(listCountries(db)[0]?.altCapitals).toEqual([]);
+  });
+
+  it('returns rows sorted by code', () => {
+    const db = fresh();
+    seedCountries(db, [fixture('ZAF', 'Pretoria'), fixture('ALB', 'Tirana')]);
+    expect(listCountries(db).map((c) => c.code)).toEqual(['ALB', 'ZAF']);
+  });
+});
+
+describe('insertRun', () => {
+  it('returns a new id for each run', () => {
+    const db = fresh();
+    const first = insertRun(db, run());
+    const second = insertRun(db, run());
+    expect(first).toBeGreaterThan(0);
+    expect(second).toBeGreaterThan(first);
+  });
+
+  it('persists every answer against the run', () => {
+    const db = fresh();
+    const id = insertRun(db, run());
+    const rows = db
+      .prepare(
+        `SELECT position, code, chosen, correct, ms
+           FROM run_answers WHERE run_id = ? ORDER BY position`,
+      )
+      .all(id);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      position: 0,
+      code: 'FRA',
+      chosen: 'Paris',
+      correct: 1,
+    });
+    expect(rows[1]).toMatchObject({
+      position: 1,
+      code: 'DEU',
+      chosen: null,
+      correct: 0,
+    });
+  });
+
+  it('rolls back the whole run if one answer is invalid', () => {
+    const db = fresh();
+    const broken = run({
+      answers: [
+        { code: 'FRA', chosen: 'Paris', correct: true, ms: 100 },
+        { code: 'DEU', chosen: 'Berlin', correct: true, ms: Number.NaN },
+      ],
+    });
+    expect(() => insertRun(db, broken)).toThrow();
+
+    // Atomicity: neither the run nor its first answer may survive.
+    const runs = db.prepare('SELECT COUNT(*) AS n FROM runs').get() as {
+      n: number;
+    };
+    const answers = db
+      .prepare('SELECT COUNT(*) AS n FROM run_answers')
+      .get() as { n: number };
+    expect(runs.n).toBe(0);
+    expect(answers.n).toBe(0);
+  });
+
+  it('accepts a run with no answers', () => {
+    expect(() => insertRun(fresh(), run({ answers: [] }))).not.toThrow();
+  });
+});
+
+describe('topRuns', () => {
+  it('sorts by score, highest first', () => {
+    const db = fresh();
+    insertRun(db, run({ playerName: 'Low', score: 100 }));
+    insertRun(db, run({ playerName: 'High', score: 900 }));
+    insertRun(db, run({ playerName: 'Mid', score: 500 }));
+    expect(topRuns(db, 10).map((r) => r.playerName)).toEqual([
+      'High',
+      'Mid',
+      'Low',
+    ]);
+  });
+
+  it('respects the limit', () => {
+    const db = fresh();
+    for (let i = 0; i < 5; i++) insertRun(db, run({ score: i * 100 }));
+    expect(topRuns(db, 2)).toHaveLength(2);
+  });
+
+  it('returns an empty list when nothing has been played', () => {
+    expect(topRuns(fresh(), 10)).toEqual([]);
+  });
+
+  it('includes the fields the leaderboard renders', () => {
+    const db = fresh();
+    insertRun(db, run());
+    const [top] = topRuns(db, 1);
+    expect(top).toMatchObject({
+      playerName: 'Philippe',
+      score: 2400,
+      correctCount: 8,
+      bestStreak: 4,
+    });
+    expect(typeof top?.id).toBe('number');
+    expect(top?.finishedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+});
+```
+
+- [ ] **Step 4: Run the test and confirm it fails**
+
+```bash
+npx vitest run apps/server/src/db.test.ts
+```
+
+Expected: FAIL — cannot resolve `./db.js`.
+
+- [ ] **Step 5: Implement the data-access layer**
+
+`apps/server/src/db.ts`:
+
+```ts
+import { DatabaseSync } from 'node:sqlite';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { Country, RunInput, RunSummary } from '@capitales/core';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const SCHEMA_PATH = path.join(HERE, 'schema.sql');
+
+interface CountryRow {
+  code: string;
+  name: string;
+  capital: string;
+  capital_lon: number;
+  capital_lat: number;
+  centroid_lon: number;
+  centroid_lat: number;
+  continent: string;
+  alt_capitals: string;
+}
+
+interface RunRow {
+  id: number;
+  player_name: string;
+  score: number;
+  correct_count: number;
+  best_streak: number;
+  finished_at: string;
+}
+
+/** Opens the database and applies the schema. Pass ':memory:' in tests. */
+export function openDb(file: string): DatabaseSync {
+  const db = new DatabaseSync(file);
+
+  // SQLite defaults foreign key enforcement to OFF, which would make the
+  // REFERENCES clause on run_answers purely decorative. Turn it on before
+  // anything is written.
+  db.exec('PRAGMA foreign_keys = ON');
+
+  // WAL lets readers and the writer work concurrently. It is meaningless for
+  // an in-memory database, so skip it there.
+  if (file !== ':memory:') db.exec('PRAGMA journal_mode = WAL');
+
+  db.exec(readFileSync(SCHEMA_PATH, 'utf8'));
+  return db;
+}
+
+/** Runs `work` in a transaction, rolling back if it throws. */
+function transaction<T>(db: DatabaseSync, work: () => T): T {
+  db.exec('BEGIN');
+  try {
+    const result = work();
+    db.exec('COMMIT');
+    return result;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function toCountry(row: CountryRow): Country {
+  return {
+    code: row.code,
+    name: row.name,
+    capital: row.capital,
+    capitalLonLat: [row.capital_lon, row.capital_lat],
+    centroid: [row.centroid_lon, row.centroid_lat],
+    continent: row.continent,
+    altCapitals: JSON.parse(row.alt_capitals) as string[],
+  };
+}
+
+export function countCountries(db: DatabaseSync): number {
+  const row = db.prepare('SELECT COUNT(*) AS n FROM countries').get() as {
+    n: number;
+  };
+  return row.n;
+}
+
+export function listCountries(db: DatabaseSync): Country[] {
+  const rows = db
+    .prepare(
+      `SELECT code, name, capital, capital_lon, capital_lat,
+              centroid_lon, centroid_lat, continent, alt_capitals
+         FROM countries
+        ORDER BY code`,
+    )
+    .all() as CountryRow[];
+  return rows.map(toCountry);
+}
+
+/** Upserts every country. Idempotent: re-seeding refreshes, never duplicates. */
+export function seedCountries(
+  db: DatabaseSync,
+  countries: readonly Country[],
+): number {
+  const stmt = db.prepare(
+    `INSERT INTO countries
+       (code, name, capital, capital_lon, capital_lat,
+        centroid_lon, centroid_lat, continent, alt_capitals)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(code) DO UPDATE SET
+       name         = excluded.name,
+       capital      = excluded.capital,
+       capital_lon  = excluded.capital_lon,
+       capital_lat  = excluded.capital_lat,
+       centroid_lon = excluded.centroid_lon,
+       centroid_lat = excluded.centroid_lat,
+       continent    = excluded.continent,
+       alt_capitals = excluded.alt_capitals`,
+  );
+
+  return transaction(db, () => {
+    for (const c of countries) {
+      stmt.run(
+        c.code,
+        c.name,
+        c.capital,
+        c.capitalLonLat[0],
+        c.capitalLonLat[1],
+        c.centroid[0],
+        c.centroid[1],
+        c.continent,
+        JSON.stringify(c.altCapitals),
+      );
+    }
+    return countries.length;
+  });
+}
+
+/**
+ * Writes one finished run and all of its answers atomically, returning the new
+ * run id. A failure part-way cannot leave a run holding half its answers.
+ */
+export function insertRun(db: DatabaseSync, run: RunInput): number {
+  const insertRunRow = db.prepare(
+    `INSERT INTO runs
+       (player_name, score, correct_count, best_streak,
+        question_count, started_at, finished_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const insertAnswer = db.prepare(
+    `INSERT INTO run_answers (run_id, position, code, chosen, correct, ms)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+
+  return transaction(db, () => {
+    const info = insertRunRow.run(
+      run.playerName,
+      run.score,
+      run.correctCount,
+      run.bestStreak,
+      run.questionCount,
+      run.startedAt,
+      new Date().toISOString(),
+    );
+    const id = Number(info.lastInsertRowid);
+
+    run.answers.forEach((answer, position) => {
+      const ms = Math.round(answer.ms);
+      if (!Number.isFinite(ms)) {
+        throw new Error(`answer ${position} has a non-finite duration`);
+      }
+      insertAnswer.run(
+        id,
+        position,
+        answer.code,
+        answer.chosen,
+        // SQLite has no boolean type, and a STRICT table rejects one outright.
+        answer.correct ? 1 : 0,
+        ms,
+      );
+    });
+
+    return id;
+  });
+}
+
+export function topRuns(db: DatabaseSync, limit: number): RunSummary[] {
+  const rows = db
+    .prepare(
+      `SELECT id, player_name, score, correct_count, best_streak, finished_at
+         FROM runs
+        ORDER BY score DESC, finished_at ASC
+        LIMIT ?`,
+    )
+    .all(limit) as RunRow[];
+
+  return rows.map((r) => ({
+    id: r.id,
+    playerName: r.player_name,
+    score: r.score,
+    correctCount: r.correct_count,
+    bestStreak: r.best_streak,
+    finishedAt: r.finished_at,
+  }));
+}
+```
+
+The secondary sort on `finished_at ASC` is not decoration. Without it, tied scores come back in whatever order SQLite happens to choose, and a leaderboard that reshuffles equal scores between page loads looks broken. Ties now break in favour of whoever got there first.
+
+- [ ] **Step 6: Run the tests**
+
+```bash
+npx vitest run apps/server/src/db.test.ts
+```
+
+Expected: PASS, 19 tests.
+
+- [ ] **Step 7: Write the seed script**
+
+`apps/server/src/seed.ts`:
 
 ```ts
 /**
- * Loads capitals.json into the Firestore emulator. Idempotent.
- * Requires `npm run emulators` to already be running.
+ * Loads capitals.json into the countries table. Idempotent.
+ * Needs nothing running: it opens the database file directly.
  */
-import { readFile } from 'node:fs/promises';
+import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Country } from '@capitales/core';
-
-const PROJECT_ID = 'demo-capitales';
-const FIRESTORE_HOST = '127.0.0.1:8080';
-
-// Must be set before firebase-admin is loaded, which is why this is a dynamic
-// import: static ESM imports are hoisted above ordinary statements.
-process.env['FIRESTORE_EMULATOR_HOST'] = FIRESTORE_HOST;
-process.env['GCLOUD_PROJECT'] = PROJECT_ID;
-
-const { initializeApp } = await import('firebase-admin/app');
-const { getFirestore } = await import('firebase-admin/firestore');
+import { countCountries, openDb, seedCountries } from './db.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const capitalsPath = path.resolve(HERE, '..', 'capitals.json');
+const ROOT = path.resolve(HERE, '..', '..', '..');
+const DB_PATH = path.join(ROOT, '.data', 'capitales.db');
+const CAPITALS = path.join(ROOT, 'packages', 'data', 'capitals.json');
 
-async function main(): Promise<void> {
-  const countries = JSON.parse(
-    await readFile(capitalsPath, 'utf8'),
-  ) as Country[];
+mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
-  initializeApp({ projectId: PROJECT_ID });
-  const db = getFirestore();
+const countries = JSON.parse(readFileSync(CAPITALS, 'utf8')) as Country[];
+const db = openDb(DB_PATH);
+const written = seedCountries(db, countries);
 
-  // Firestore caps a batch at 500 writes.
-  const CHUNK = 400;
-  for (let i = 0; i < countries.length; i += CHUNK) {
-    const batch = db.batch();
-    for (const c of countries.slice(i, i + CHUNK)) {
-      batch.set(db.collection('countries').doc(c.code), c);
-    }
-    await batch.commit();
-  }
-
-  const after = await db.collection('countries').count().get();
-  console.log(`seeded ${countries.length}, collection now holds ${after.data().count}`);
-}
-
-await main();
-process.exit(0);
+console.log(`seeded ${written}, table now holds ${countCountries(db)}`);
+db.close();
 ```
 
-The `process.exit(0)` is deliberate: the Admin SDK keeps a gRPC channel open and the script would otherwise hang after finishing.
-
-- [ ] **Step 3: Add the script**
+- [ ] **Step 8: Add the script and run it**
 
 Add to the root `package.json` scripts:
 
 ```json
-"seed": "tsx packages/data/src/seed.ts"
+"seed": "tsx apps/server/src/seed.ts"
 ```
-
-- [ ] **Step 4: Run it against a live emulator**
-
-With `npm run emulators` running in another terminal:
 
 ```bash
 npm run seed
 ```
 
-Expected: `seeded 193, collection now holds 193`.
+Expected: `seeded 193, table now holds 193`.
 
-If it hangs instead, the emulator is not running — the Admin SDK retries silently, which is the same failure mode the app guards against in Task 10.
-
-- [ ] **Step 5: Verify in the Emulator UI**
-
-Open http://127.0.0.1:4000/firestore and confirm the `countries` collection lists 193 documents, and that `FRA` has `capital: "Paris"` and `capitalLonLat` with longitude ≈ 2.35 first.
-
-- [ ] **Step 6: Confirm idempotency**
-
-Run `npm run seed` a second time. Expected: the same `193` count, not 386.
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 9: Confirm idempotency and inspect the file**
 
 ```bash
-git add packages/data package.json package-lock.json
-git commit -m "feat(data): add idempotent emulator seed script"
+npm run seed
+```
+
+Expected: the same `193`, not 386.
+
+Then check the three cases spec §5.6 calls out:
+
+```bash
+node -e "const{DatabaseSync}=require('node:sqlite');const d=new DatabaseSync('.data/capitales.db');console.table(d.prepare('SELECT code,capital,capital_lon FROM countries WHERE code IN (?,?,?)').all('FRA','ZAF','SDS'))"
+```
+
+Expected: France with `Paris` and a longitude near `2.35`, South Africa with `Pretoria` rather than Johannesburg, and South Sudan with `Juba`.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add apps/server package.json package-lock.json
+git commit -m "feat(server): add sqlite schema, data access layer and seed script"
 ```
 
 ---
@@ -1865,9 +2359,9 @@ git commit -m "feat(core): generate questions with same-continent distractors"
 - Test: `packages/core/src/game.test.ts`
 
 **Interfaces:**
-- Consumes: `Question`/`isCorrect` from `./questions.js`, `scoreAnswer`/`QUESTION_MS` from `./scoring.js`.
+- Consumes: `AnswerRecord` from `./types.js`, `Question`/`isCorrect` from `./questions.js`, `scoreAnswer`/`QUESTION_MS` from `./scoring.js`.
 - Produces:
-  - `type Phase`, `interface AnswerRecord`, `interface GameState`, `type GameEvent`
+  - `type Phase`, `interface GameState`, `type GameEvent`
   - `initialState(): GameState`
   - `reduce(state: GameState, event: GameEvent): GameState`
   - `remainingMs(state: GameState, now: number): number`
@@ -2060,9 +2554,9 @@ describe('reduce', () => {
   });
 
   it('enters the error phase on FAIL', () => {
-    const s = reduce(initialState(), { type: 'FAIL', reason: 'no emulator' });
+    const s = reduce(initialState(), { type: 'FAIL', reason: 'no API server' });
     expect(s.phase).toBe('error');
-    expect(s.error).toBe('no emulator');
+    expect(s.error).toBe('no API server');
   });
 
   it('resets to idle on RESTART', () => {
@@ -2119,6 +2613,7 @@ Expected: FAIL — cannot resolve `./game.js`.
 `packages/core/src/game.ts`:
 
 ```ts
+import type { AnswerRecord } from './types.js';
 import type { Question } from './questions.js';
 import { isCorrect } from './questions.js';
 import { QUESTION_MS, scoreAnswer } from './scoring.js';
@@ -2133,14 +2628,6 @@ export type Phase =
   | 'submitting'
   | 'leaderboard'
   | 'error';
-
-export interface AnswerRecord {
-  code: string;
-  /** The city the player picked, or null on a timeout. */
-  chosen: string | null;
-  correct: boolean;
-  ms: number;
-}
 
 export interface GameState {
   phase: Phase;
@@ -2331,78 +2818,659 @@ git commit -m "feat(core): add clock-free game state machine"
 
 ---
 
-### Task 10: Firebase client wrapper
+### Task 10: The API server
+
+Four endpoints over `node:http`. This task also carries the append-only guarantee that Firestore security rules used to provide, so it tests that guarantee directly.
+
+**Files:**
+- Create: `apps/server/src/routes.ts`, `apps/server/src/server.ts`, `apps/server/src/index.ts`
+- Modify: root `package.json` (add the `server` script)
+- Test: `apps/server/src/routes.test.ts`
+
+**Interfaces:**
+- Consumes: everything from `apps/server/src/db.ts` (Task 4).
+- Produces:
+  - `createServer(db: DatabaseSync): http.Server` — a server not yet listening
+  - `PORT = 8787`
+  - Endpoints: `GET /api/health`, `GET /api/countries`, `POST /api/runs`, `GET /api/leaderboard?limit=n`
+
+- [ ] **Step 1: Write the failing test**
+
+The server is started in-process on an ephemeral port against an in-memory database and driven with plain `fetch`. No external process, no fixture files, no cleanup between files.
+
+`apps/server/src/routes.test.ts`:
+
+```ts
+import type { AddressInfo } from 'node:net';
+import type { Server } from 'node:http';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { Country, RunInput } from '@capitales/core';
+import { openDb, seedCountries } from './db.js';
+import { createServer } from './routes.js';
+
+let server: Server;
+let base: string;
+
+function fixture(code: string, capital: string): Country {
+  return {
+    code,
+    name: `Name of ${code}`,
+    capital,
+    capitalLonLat: [2.3522, 48.8566],
+    centroid: [2.45, 46.6],
+    continent: 'Europe',
+    altCapitals: [],
+  };
+}
+
+function run(overrides: Partial<RunInput> = {}): RunInput {
+  return {
+    playerName: 'Philippe',
+    score: 2400,
+    correctCount: 8,
+    bestStreak: 4,
+    questionCount: 10,
+    startedAt: '2026-08-24T10:00:00.000Z',
+    answers: [{ code: 'FRA', chosen: 'Paris', correct: true, ms: 1200 }],
+    ...overrides,
+  };
+}
+
+function post(path: string, body: unknown) {
+  return fetch(base + path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
+}
+
+beforeEach(async () => {
+  const db = openDb(':memory:');
+  seedCountries(db, [fixture('FRA', 'Paris'), fixture('DEU', 'Berlin')]);
+  server = createServer(db);
+  // Port 0 asks the OS for any free port, so tests never collide with a
+  // running dev server or with each other.
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  base = `http://127.0.0.1:${port}`;
+});
+
+afterEach(async () => {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
+describe('GET /api/health', () => {
+  it('reports ok and the country count', async () => {
+    const res = await fetch(`${base}/api/health`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, countries: 2 });
+  });
+
+  it('reports zero countries on an unseeded database', async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    server = createServer(openDb(':memory:'));
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    const res = await fetch(`http://127.0.0.1:${port}/api/health`);
+    expect(await res.json()).toEqual({ ok: true, countries: 0 });
+  });
+});
+
+describe('GET /api/countries', () => {
+  it('returns every country as JSON', async () => {
+    const res = await fetch(`${base}/api/countries`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toMatch(/application\/json/);
+    const body = (await res.json()) as Country[];
+    expect(body).toHaveLength(2);
+    expect(body[0]?.code).toBe('DEU');
+  });
+
+  it('preserves [lon, lat] order across the wire', async () => {
+    const body = (await (await fetch(`${base}/api/countries`)).json()) as Country[];
+    expect(body[0]?.capitalLonLat).toEqual([2.3522, 48.8566]);
+  });
+});
+
+describe('POST /api/runs', () => {
+  it('stores a run and returns its id', async () => {
+    const res = await post('/api/runs', run());
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { id: number };
+    expect(body.id).toBeGreaterThan(0);
+  });
+
+  it('makes the run visible on the leaderboard', async () => {
+    await post('/api/runs', run({ playerName: 'Ada', score: 3100 }));
+    const board = await (await fetch(`${base}/api/leaderboard`)).json();
+    expect(board).toHaveLength(1);
+    expect(board[0]).toMatchObject({ playerName: 'Ada', score: 3100 });
+  });
+
+  it('rejects a body that is not JSON', async () => {
+    const res = await post('/api/runs', 'this is not json');
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/json/i);
+  });
+
+  it('rejects a run missing required fields', async () => {
+    const res = await post('/api/runs', { playerName: 'Nobody' });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a run whose score is not a number', async () => {
+    const res = await post('/api/runs', run({ score: 'lots' as never }));
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a run whose answers are not an array', async () => {
+    const res = await post('/api/runs', run({ answers: 'none' as never }));
+    expect(res.status).toBe(400);
+  });
+
+  it('stores nothing when the body is rejected', async () => {
+    await post('/api/runs', { playerName: 'Nobody' });
+    expect(await (await fetch(`${base}/api/leaderboard`)).json()).toEqual([]);
+  });
+});
+
+describe('GET /api/leaderboard', () => {
+  it('sorts by score, highest first', async () => {
+    await post('/api/runs', run({ playerName: 'Low', score: 100 }));
+    await post('/api/runs', run({ playerName: 'High', score: 900 }));
+    const board = await (await fetch(`${base}/api/leaderboard`)).json();
+    expect(board.map((r: { playerName: string }) => r.playerName)).toEqual([
+      'High',
+      'Low',
+    ]);
+  });
+
+  it('honours an explicit limit', async () => {
+    for (let i = 0; i < 5; i++) await post('/api/runs', run({ score: i * 10 }));
+    const board = await (await fetch(`${base}/api/leaderboard?limit=2`)).json();
+    expect(board).toHaveLength(2);
+  });
+
+  it('ignores a nonsensical limit rather than failing', async () => {
+    await post('/api/runs', run());
+    for (const bad of ['abc', '-5', '0', '99999']) {
+      const res = await fetch(`${base}/api/leaderboard?limit=${bad}`);
+      expect(res.status, bad).toBe(200);
+      expect(Array.isArray(await res.json()), bad).toBe(true);
+    }
+  });
+
+  it('returns an empty array before anything is played', async () => {
+    expect(await (await fetch(`${base}/api/leaderboard`)).json()).toEqual([]);
+  });
+});
+
+describe('the append-only guarantee', () => {
+  // Spec section 5.4: with no security-rules layer, "runs cannot be edited"
+  // holds only because no such route exists. Assert it rather than assume it.
+  it('refuses to update an existing run', async () => {
+    const { id } = (await (await post('/api/runs', run())).json()) as {
+      id: number;
+    };
+    for (const method of ['PUT', 'PATCH']) {
+      const res = await fetch(`${base}/api/runs/${id}`, {
+        method,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ score: 999999 }),
+      });
+      expect(res.status, method).toBe(404);
+    }
+  });
+
+  it('refuses to delete an existing run', async () => {
+    const { id } = (await (await post('/api/runs', run())).json()) as {
+      id: number;
+    };
+    const res = await fetch(`${base}/api/runs/${id}`, { method: 'DELETE' });
+    expect(res.status).toBe(404);
+
+    const board = await (await fetch(`${base}/api/leaderboard`)).json();
+    expect(board).toHaveLength(1);
+  });
+
+  it('refuses to write to countries', async () => {
+    const res = await post('/api/countries', fixture('XXX', 'Nowhere'));
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('unknown routes', () => {
+  it('returns 404 JSON, never an HTML error page', async () => {
+    const res = await fetch(`${base}/api/nope`);
+    expect(res.status).toBe(404);
+    expect(res.headers.get('content-type')).toMatch(/application\/json/);
+    expect((await res.json()).error).toBeDefined();
+  });
+
+  it('returns 404 for a path outside /api', async () => {
+    expect((await fetch(`${base}/`)).status).toBe(404);
+  });
+});
+```
+
+- [ ] **Step 2: Run the test and confirm it fails**
+
+```bash
+npx vitest run apps/server/src/routes.test.ts
+```
+
+Expected: FAIL — cannot resolve `./routes.js`.
+
+- [ ] **Step 3: Implement the routes**
+
+`apps/server/src/routes.ts`:
+
+```ts
+import { createServer as createHttpServer, type Server } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { DatabaseSync } from 'node:sqlite';
+import type { RunInput } from '@capitales/core';
+import { countCountries, insertRun, listCountries, topRuns } from './db.js';
+
+export const PORT = 8787;
+export const HOST = '127.0.0.1';
+
+const DEFAULT_LIMIT = 10;
+const MAX_LIMIT = 100;
+/** Refuse absurd payloads rather than buffering them. */
+const MAX_BODY_BYTES = 256 * 1024;
+
+class BadRequest extends Error {}
+
+function send(res: ServerResponse, status: number, body: unknown): void {
+  const payload = JSON.stringify(body);
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': Buffer.byteLength(payload),
+  });
+  res.end(payload);
+}
+
+async function readJson(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > MAX_BODY_BYTES) throw new BadRequest('body too large');
+    chunks.push(chunk as Buffer);
+  }
+  const raw = Buffer.concat(chunks).toString('utf8');
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new BadRequest('body is not valid JSON');
+  }
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+/**
+ * Validates an untrusted request body into a RunInput.
+ *
+ * This is the trust boundary: everything past this point is typed, and the
+ * types are only honest because this function checked them.
+ */
+function parseRun(body: unknown): RunInput {
+  if (typeof body !== 'object' || body === null) {
+    throw new BadRequest('expected a JSON object');
+  }
+  const b = body as Record<string, unknown>;
+
+  if (typeof b['playerName'] !== 'string' || b['playerName'].length === 0) {
+    throw new BadRequest('playerName must be a non-empty string');
+  }
+  for (const key of ['score', 'correctCount', 'bestStreak', 'questionCount']) {
+    if (!isFiniteNumber(b[key])) throw new BadRequest(`${key} must be a number`);
+  }
+  if (typeof b['startedAt'] !== 'string') {
+    throw new BadRequest('startedAt must be an ISO 8601 string');
+  }
+  if (!Array.isArray(b['answers'])) {
+    throw new BadRequest('answers must be an array');
+  }
+
+  const answers = b['answers'].map((raw, i) => {
+    if (typeof raw !== 'object' || raw === null) {
+      throw new BadRequest(`answer ${i} must be an object`);
+    }
+    const a = raw as Record<string, unknown>;
+    if (typeof a['code'] !== 'string') {
+      throw new BadRequest(`answer ${i}: code must be a string`);
+    }
+    if (a['chosen'] !== null && typeof a['chosen'] !== 'string') {
+      throw new BadRequest(`answer ${i}: chosen must be a string or null`);
+    }
+    if (typeof a['correct'] !== 'boolean') {
+      throw new BadRequest(`answer ${i}: correct must be a boolean`);
+    }
+    if (!isFiniteNumber(a['ms'])) {
+      throw new BadRequest(`answer ${i}: ms must be a number`);
+    }
+    return {
+      code: a['code'],
+      chosen: a['chosen'],
+      correct: a['correct'],
+      ms: a['ms'],
+    };
+  });
+
+  return {
+    playerName: b['playerName'].slice(0, 40),
+    score: b['score'] as number,
+    correctCount: b['correctCount'] as number,
+    bestStreak: b['bestStreak'] as number,
+    questionCount: b['questionCount'] as number,
+    startedAt: b['startedAt'],
+    answers,
+  };
+}
+
+/** Clamps ?limit= into something sane. Nonsense falls back to the default. */
+function parseLimit(raw: string | null): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) return DEFAULT_LIMIT;
+  return Math.min(n, MAX_LIMIT);
+}
+
+/**
+ * Builds the server. Not listening yet, so tests can bind an ephemeral port.
+ *
+ * Note what is absent: there is no PUT, PATCH or DELETE anywhere. That absence
+ * IS the append-only guarantee from spec section 5.4, which is why the tests
+ * assert it explicitly.
+ */
+export function createServer(db: DatabaseSync): Server {
+  return createHttpServer(async (req, res) => {
+    const url = new URL(req.url ?? '/', `http://${HOST}`);
+    const route = `${req.method} ${url.pathname}`;
+
+    try {
+      switch (route) {
+        case 'GET /api/health':
+          return send(res, 200, { ok: true, countries: countCountries(db) });
+
+        case 'GET /api/countries':
+          return send(res, 200, listCountries(db));
+
+        case 'GET /api/leaderboard':
+          return send(res, 200, topRuns(db, parseLimit(url.searchParams.get('limit'))));
+
+        case 'POST /api/runs': {
+          const run = parseRun(await readJson(req));
+          return send(res, 201, { id: insertRun(db, run) });
+        }
+
+        default:
+          return send(res, 404, { error: `no route for ${route}` });
+      }
+    } catch (error) {
+      if (error instanceof BadRequest) {
+        return send(res, 400, { error: error.message });
+      }
+      // Log the route, return JSON. Never leak a stack trace as HTML.
+      console.error(`500 on ${route}:`, error);
+      return send(res, 500, { error: 'internal server error' });
+    }
+  });
+}
+```
+
+- [ ] **Step 4: Run the tests**
+
+```bash
+npx vitest run apps/server/src/routes.test.ts
+```
+
+Expected: PASS, 20 tests.
+
+- [ ] **Step 5: Write the startup entry point**
+
+`apps/server/src/server.ts`:
+
+```ts
+import { mkdirSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { openDb } from './db.js';
+import { createServer, HOST, PORT } from './routes.js';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(HERE, '..', '..', '..');
+const DB_PATH = path.join(ROOT, '.data', 'capitales.db');
+
+mkdirSync(path.dirname(DB_PATH), { recursive: true });
+
+const db = openDb(DB_PATH);
+const server = createServer(db);
+
+server.listen(PORT, HOST, () => {
+  console.log(`capitales api on http://${HOST}:${PORT}`);
+});
+
+// Close the database cleanly so WAL checkpoints on the way out.
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, () => {
+    server.close(() => {
+      db.close();
+      process.exit(0);
+    });
+  });
+}
+```
+
+`apps/server/src/index.ts`:
+
+```ts
+export * from './db.js';
+export * from './routes.js';
+```
+
+- [ ] **Step 6: Add the script and start it**
+
+Add to the root `package.json` scripts:
+
+```json
+"server": "tsx apps/server/src/server.ts"
+```
+
+```bash
+npm run server
+```
+
+Expected: `capitales api on http://127.0.0.1:8787`.
+
+- [ ] **Step 7: Exercise it by hand**
+
+In a second terminal:
+
+```bash
+curl -s http://127.0.0.1:8787/api/health
+```
+
+Expected: `{"ok":true,"countries":193}`.
+
+```bash
+curl -s "http://127.0.0.1:8787/api/countries" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const a=JSON.parse(s);console.log(a.length,'countries; FRA =',a.find(c=>c.code==='FRA'))})"
+```
+
+Expected: `193 countries;` followed by the France record with `capital: 'Paris'`.
+
+- [ ] **Step 8: Confirm the append-only guarantee against the live server**
+
+```bash
+curl -s -o /dev/null -w "PUT=%{http_code} " -X PUT http://127.0.0.1:8787/api/runs/1 && curl -s -o /dev/null -w "DELETE=%{http_code}\n" -X DELETE http://127.0.0.1:8787/api/runs/1
+```
+
+Expected: `PUT=404 DELETE=404`. If either returns anything else, a route was added that must not exist.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add apps/server package.json package-lock.json
+git commit -m "feat(server): add JSON API with append-only run storage"
+```
+
+---
+
+### Task 11: The browser API client
 
 **Files:**
 - Create: `packages/data/src/client.ts`, `packages/data/src/index.ts`
+- Modify: `packages/data/package.json`
 - Test: `packages/data/src/client.test.ts`
 
 **Interfaces:**
-- Consumes: `Country`, `AnswerRecord` from `@capitales/core`.
+- Consumes: `Country`, `RunInput`, `RunSummary` from `@capitales/core`; the API from Task 10.
 - Produces:
-  - `interface RunSummary { playerName: string; score: number; correctCount: number; bestStreak: number }`
-  - `interface RunInput { playerName: string; score: number; correctCount: number; bestStreak: number; questionCount: number; startedAt: number; answers: AnswerRecord[] }`
-  - `probeEmulator(host?: string, timeoutMs?: number): Promise<boolean>`
-  - `connect(): Promise<string>` — signs in anonymously, returns the uid
+  - `probeApi(timeoutMs?: number): Promise<{ reachable: boolean; countries: number }>`
   - `loadCountries(): Promise<Country[]>`
-  - `saveRun(run: RunInput): Promise<void>`
-  - `topScores(n?: number): Promise<RunSummary[]>`
-  - `EmulatorUnreachableError`, `DatabaseEmptyError`
+  - `saveRun(run: RunInput): Promise<number>`
+  - `topScores(limit?: number): Promise<RunSummary[]>`
+  - `ApiUnreachableError`, `DatabaseEmptyError`
 
-- [ ] **Step 1: Install the client SDK**
+- [ ] **Step 1: Declare the dependency**
 
-```bash
-npm install -w @capitales/data firebase
-```
+Add `@capitales/core` to `packages/data/package.json` dependencies if it is not already there (Task 3 added it). No new installs: the client uses `fetch`, which is global in Node 18+ and in every browser.
 
 - [ ] **Step 2: Write the failing test**
-
-Only `probeEmulator` is unit-tested here; the Firestore paths are covered by the rules tests in Task 13 and by the Playwright run in Plan 2. Testing them here would mean mocking the SDK, which tests the mock rather than the code.
 
 `packages/data/src/client.test.ts`:
 
 ```ts
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { probeEmulator } from './client.js';
+import {
+  ApiUnreachableError,
+  DatabaseEmptyError,
+  loadCountries,
+  probeApi,
+  saveRun,
+  topScores,
+} from './client.js';
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('probeEmulator', () => {
-  it('reports reachable when the host answers at all', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('Ok')));
-    expect(await probeEmulator()).toBe(true);
-  });
-
-  it('reports reachable even on a 404, because something is listening', async () => {
-    // The point is distinguishing "listening" from "nothing there" — any HTTP
-    // response proves the emulator is up.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('nope', { status: 404 })),
-    );
-    expect(await probeEmulator()).toBe(true);
+describe('probeApi', () => {
+  it('reports the country count when the server answers', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ok: true, countries: 193 })));
+    expect(await probeApi()).toEqual({ reachable: true, countries: 193 });
   });
 
   it('reports unreachable when the connection is refused', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => {
-        throw new TypeError('fetch failed');
-      }),
-    );
-    expect(await probeEmulator()).toBe(false);
+    // fetch to a closed port rejects with TypeError. This is the single most
+    // common failure in local development, so it must be fast and explicit.
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }));
+    expect(await probeApi()).toEqual({ reachable: false, countries: 0 });
   });
 
   it('reports unreachable when the request times out', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => {
-        throw new DOMException('aborted', 'AbortError');
-      }),
-    );
-    expect(await probeEmulator('127.0.0.1:8080', 10)).toBe(false);
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new DOMException('aborted', 'AbortError');
+    }));
+    expect(await probeApi(10)).toEqual({ reachable: false, countries: 0 });
+  });
+
+  it('reports unreachable when something else is on the port', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>hi</html>', { status: 200 })));
+    expect(await probeApi()).toEqual({ reachable: false, countries: 0 });
+  });
+});
+
+describe('loadCountries', () => {
+  it('returns the countries the API sent', async () => {
+    const countries = [{ code: 'FRA', capital: 'Paris' }];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).includes('/api/health')) {
+        return jsonResponse({ ok: true, countries: 1 });
+      }
+      return jsonResponse(countries);
+    }));
+    expect(await loadCountries()).toEqual(countries);
+  });
+
+  it('throws ApiUnreachableError naming the address and the fix', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }));
+    await expect(loadCountries()).rejects.toThrow(ApiUnreachableError);
+    await expect(loadCountries()).rejects.toThrow(/npm run server/);
+  });
+
+  it('throws DatabaseEmptyError when nothing is seeded', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ok: true, countries: 0 })));
+    await expect(loadCountries()).rejects.toThrow(DatabaseEmptyError);
+    await expect(loadCountries()).rejects.toThrow(/npm run seed/);
+  });
+});
+
+describe('saveRun', () => {
+  const run = {
+    playerName: 'Philippe',
+    score: 100,
+    correctCount: 1,
+    bestStreak: 1,
+    questionCount: 10,
+    startedAt: '2026-08-24T10:00:00.000Z',
+    answers: [],
+  };
+
+  it('returns the new run id', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ id: 7 }, 201)));
+    expect(await saveRun(run)).toBe(7);
+  });
+
+  it('POSTs JSON to /api/runs', async () => {
+    const spy = vi.fn(async () => jsonResponse({ id: 1 }, 201));
+    vi.stubGlobal('fetch', spy);
+    await saveRun(run);
+    const [url, init] = spy.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toContain('/api/runs');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toMatchObject({ playerName: 'Philippe' });
+  });
+
+  it('surfaces the server error message on a 400', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: 'score must be a number' }, 400)));
+    await expect(saveRun(run)).rejects.toThrow(/score must be a number/);
+  });
+
+  it('throws ApiUnreachableError when the server is down', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }));
+    await expect(saveRun(run)).rejects.toThrow(ApiUnreachableError);
+  });
+});
+
+describe('topScores', () => {
+  it('returns the leaderboard rows', async () => {
+    const rows = [{ id: 1, playerName: 'Ada', score: 900 }];
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(rows)));
+    expect(await topScores()).toEqual(rows);
+  });
+
+  it('passes the limit through as a query parameter', async () => {
+    const spy = vi.fn(async () => jsonResponse([]));
+    vi.stubGlobal('fetch', spy);
+    await topScores(3);
+    expect(String(spy.mock.calls[0]?.[0])).toContain('limit=3');
   });
 });
 ```
@@ -2420,143 +3488,108 @@ Expected: FAIL — cannot resolve `./client.js`.
 `packages/data/src/client.ts`:
 
 ```ts
-import { initializeApp, type FirebaseApp } from 'firebase/app';
-import {
-  connectAuthEmulator,
-  getAuth,
-  signInAnonymously,
-  type Auth,
-} from 'firebase/auth';
-import {
-  collection,
-  connectFirestoreEmulator,
-  addDoc,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-  serverTimestamp,
-  getFirestore,
-  type Firestore,
-} from 'firebase/firestore';
-import type { AnswerRecord, Country } from '@capitales/core';
+import type { Country, RunInput, RunSummary } from '@capitales/core';
 
-const PROJECT_ID = 'demo-capitales';
-const FIRESTORE_HOST = '127.0.0.1';
-const FIRESTORE_PORT = 8080;
-const AUTH_URL = 'http://127.0.0.1:9099';
+/**
+ * Relative, so the browser talks to its own origin and Vite's proxy forwards
+ * /api to the server. No CORS, no host to configure per shell.
+ */
+const API = '/api';
+const ADDRESS = '127.0.0.1:8787';
+const PROBE_TIMEOUT_MS = 1500;
 
-export class EmulatorUnreachableError extends Error {
+export class ApiUnreachableError extends Error {
   constructor() {
-    super(
-      `Firebase emulator not reachable at ${FIRESTORE_HOST}:${FIRESTORE_PORT}. ` +
-        `Run: npm run emulators`,
-    );
-    this.name = 'EmulatorUnreachableError';
+    super(`API server not reachable at ${ADDRESS}. Run: npm run server`);
+    this.name = 'ApiUnreachableError';
   }
 }
 
 export class DatabaseEmptyError extends Error {
   constructor() {
-    super('The countries collection is empty. Run: npm run seed');
+    super('The countries table is empty. Run: npm run seed');
     this.name = 'DatabaseEmptyError';
   }
 }
 
-export interface RunSummary {
-  playerName: string;
-  score: number;
-  correctCount: number;
-  bestStreak: number;
+/** Any fetch that failed to reach a server at all. */
+function isNetworkFailure(error: unknown): boolean {
+  return (
+    error instanceof TypeError ||
+    (error instanceof DOMException && error.name === 'AbortError')
+  );
 }
 
-export interface RunInput extends RunSummary {
-  questionCount: number;
-  startedAt: number;
-  answers: AnswerRecord[];
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(API + path, init);
+  } catch (error) {
+    if (isNetworkFailure(error)) throw new ApiUnreachableError();
+    throw error;
+  }
+
+  if (!res.ok) {
+    let message = `${res.status} ${res.statusText}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error) message = body.error;
+    } catch {
+      // Response had no JSON body; the status line is all we have.
+    }
+    throw new Error(message);
+  }
+
+  return (await res.json()) as T;
 }
 
 /**
- * Bounded reachability check.
+ * Bounded reachability check, run once at boot.
  *
- * This exists because the Firestore SDK retries a dead emulator silently and
- * indefinitely: without this probe the app shows a blank screen and no error,
- * which is the single most confusing failure mode in local Firebase work.
- *
- * Any HTTP response counts as reachable — the question is whether something is
- * listening, not what it said.
+ * A `fetch` to a closed port rejects quickly with a TypeError rather than
+ * hanging, but the timeout also covers the case where something else is
+ * listening on 8787 and never answers.
  */
-export async function probeEmulator(
-  host: string = `${FIRESTORE_HOST}:${FIRESTORE_PORT}`,
-  timeoutMs = 1500,
-): Promise<boolean> {
+export async function probeApi(
+  timeoutMs = PROBE_TIMEOUT_MS,
+): Promise<{ reachable: boolean; countries: number }> {
   try {
-    await fetch(`http://${host}/`, { signal: AbortSignal.timeout(timeoutMs) });
-    return true;
+    const res = await fetch(`${API}/health`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const body = (await res.json()) as { ok?: boolean; countries?: number };
+    if (body.ok !== true || typeof body.countries !== 'number') {
+      // Something is listening on the port, but it is not our server.
+      return { reachable: false, countries: 0 };
+    }
+    return { reachable: true, countries: body.countries };
   } catch {
-    return false;
+    return { reachable: false, countries: 0 };
   }
 }
 
-let app: FirebaseApp | undefined;
-let db: Firestore | undefined;
-let auth: Auth | undefined;
-
-function ensureApp(): { db: Firestore; auth: Auth } {
-  if (!app) {
-    // apiKey must be non-empty for the SDK to initialise, but with a demo-
-    // prefixed project id it is never sent anywhere real.
-    app = initializeApp({ projectId: PROJECT_ID, apiKey: 'demo-key' });
-    db = getFirestore(app);
-    auth = getAuth(app);
-    connectFirestoreEmulator(db, FIRESTORE_HOST, FIRESTORE_PORT);
-    connectAuthEmulator(auth, AUTH_URL, { disableWarnings: true });
-  }
-  return { db: db as Firestore, auth: auth as Auth };
-}
-
-/** Signs in anonymously and returns the uid. Throws if the emulator is down. */
-export async function connect(): Promise<string> {
-  if (!(await probeEmulator())) throw new EmulatorUnreachableError();
-  const { auth } = ensureApp();
-  const credential = await signInAnonymously(auth);
-  return credential.user.uid;
-}
-
-/** Loads every country. Throws DatabaseEmptyError if nothing is seeded. */
+/**
+ * Loads every country, after checking the two failures that would otherwise
+ * present as a blank screen: no server, and an unseeded database.
+ */
 export async function loadCountries(): Promise<Country[]> {
-  const { db } = ensureApp();
-  const snapshot = await getDocs(collection(db, 'countries'));
-  if (snapshot.empty) throw new DatabaseEmptyError();
-  return snapshot.docs.map((d) => d.data() as Country);
+  const { reachable, countries } = await probeApi();
+  if (!reachable) throw new ApiUnreachableError();
+  if (countries === 0) throw new DatabaseEmptyError();
+  return request<Country[]>('/countries');
 }
 
-export async function saveRun(run: RunInput): Promise<void> {
-  const { db, auth } = ensureApp();
-  const uid = auth.currentUser?.uid;
-  if (!uid) throw new Error('not signed in');
-  await addDoc(collection(db, 'runs'), {
-    ...run,
-    uid,
-    startedAt: new Date(run.startedAt),
-    finishedAt: serverTimestamp(),
+export async function saveRun(run: RunInput): Promise<number> {
+  const { id } = await request<{ id: number }>('/runs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(run),
   });
+  return id;
 }
 
-export async function topScores(n = 10): Promise<RunSummary[]> {
-  const { db } = ensureApp();
-  const snapshot = await getDocs(
-    query(collection(db, 'runs'), orderBy('score', 'desc'), limit(n)),
-  );
-  return snapshot.docs.map((d) => {
-    const data = d.data() as RunSummary;
-    return {
-      playerName: data.playerName,
-      score: data.score,
-      correctCount: data.correctCount,
-      bestStreak: data.bestStreak,
-    };
-  });
+export async function topScores(limit = 10): Promise<RunSummary[]> {
+  return request<RunSummary[]>(`/leaderboard?limit=${limit}`);
 }
 ```
 
@@ -2574,18 +3607,18 @@ export * from './client.js';
 npx vitest run packages/data/src/client.test.ts
 ```
 
-Expected: PASS, 4 tests.
+Expected: PASS, 13 tests.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add packages/data package.json package-lock.json
-git commit -m "feat(data): add firebase client with bounded emulator probe"
+git add packages/data
+git commit -m "feat(data): add fetch client with explicit boot diagnostics"
 ```
 
 ---
 
-### Task 11: Svelte UI primitives
+### Task 12: Svelte UI primitives
 
 **Files:**
 - Create: `packages/ui/package.json`, `packages/ui/src/index.ts`
@@ -2869,15 +3902,15 @@ git commit -m "feat(ui): add map, timer, answer and scoreboard components"
 
 ---
 
-### Task 12: The web app
+### Task 13: The web app
 
 **Files:**
 - Create: `apps/web/package.json`, `apps/web/vite.config.ts`, `apps/web/svelte.config.js`, `apps/web/index.html`, `apps/web/src/main.ts`, `apps/web/src/app.css`, `apps/web/src/App.svelte`, `apps/web/src/game.svelte.ts`
-- Modify: root `package.json` (add the `dev` and `build` scripts)
+- Modify: root `package.json` (add the `dev` and `build` scripts), `README.md`
 
 **Interfaces:**
-- Consumes: everything produced by Tasks 2 and 5–11.
-- Produces: `apps/web/dist` (the build output that Plan 2's Electron shell loads); the `npm run dev` script.
+- Consumes: everything produced by Tasks 2 and 5–12.
+- Produces: `apps/web/dist` (the build output Plan 2's Electron shell loads); the `npm run dev` script.
 
 - [ ] **Step 1: Create the app package**
 
@@ -2904,7 +3937,7 @@ git commit -m "feat(ui): add map, timer, answer and scoreboard components"
 ```
 
 ```bash
-npm install -w @capitales/web -D vite @sveltejs/vite-plugin-svelte svelte svelte-check @tsconfig/svelte tailwindcss @tailwindcss/vite
+npm install -w @capitales/web -D vite @sveltejs/vite-plugin-svelte svelte svelte-check tailwindcss @tailwindcss/vite
 ```
 
 - [ ] **Step 2: Configure Vite and Svelte**
@@ -2926,7 +3959,15 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [svelte(), tailwindcss()],
-  server: { port: 5173 },
+  server: {
+    port: 5173,
+    // The client fetches relative /api paths, so the browser only ever talks
+    // to its own origin and CORS never enters the picture. This one line is
+    // what lets packages/data stay free of any host configuration.
+    proxy: {
+      '/api': { target: 'http://127.0.0.1:8787', changeOrigin: false },
+    },
+  },
   // The workspace packages ship TypeScript source, not a build. Excluding them
   // from dependency pre-bundling lets Vite transform them like app code, so
   // edits in packages/* hot-reload instead of needing a rebuild.
@@ -2992,14 +4033,9 @@ import {
   type Country,
   type GameEvent,
   type GameState,
-} from '@capitales/core';
-import {
-  connect,
-  loadCountries,
-  saveRun,
-  topScores,
   type RunSummary,
-} from '@capitales/data';
+} from '@capitales/core';
+import { loadCountries, saveRun, topScores } from '@capitales/data';
 
 export const QUESTION_COUNT = 10;
 const REVEAL_MS = 1200;
@@ -3010,14 +4046,14 @@ export function createGame() {
   let now = $state(Date.now());
   let leaderboard = $state<RunSummary[]>([]);
   let playerName = $state('Player');
-  let startedAt = 0;
+  let startedAt = new Date().toISOString();
 
   function dispatch(event: GameEvent): void {
     state = reduce(state, event);
   }
 
-  // One interval for the whole app. The reducer sees only the TIMEOUT it
-  // produces, never the ticks.
+  // One interval for the whole app. The reducer only ever sees the TIMEOUT it
+  // produces, never the ticks themselves.
   const tick = setInterval(() => {
     now = Date.now();
     if (state.phase === 'question' && remainingMs(state, now) <= 0) {
@@ -3032,13 +4068,12 @@ export function createGame() {
   async function boot(): Promise<void> {
     dispatch({ type: 'LOAD' });
     try {
-      await connect();
       countries = await loadCountries();
       start();
-    } catch (err) {
+    } catch (error) {
       dispatch({
         type: 'FAIL',
-        reason: err instanceof Error ? err.message : String(err),
+        reason: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -3049,7 +4084,7 @@ export function createGame() {
       type: 'LOADED',
       questions: buildRun(countries, QUESTION_COUNT, mulberry32(seed)),
     });
-    startedAt = Date.now();
+    startedAt = new Date().toISOString();
     dispatch({ type: 'START', now: Date.now() });
   }
 
@@ -3073,10 +4108,10 @@ export function createGame() {
       });
       leaderboard = await topScores(10);
       dispatch({ type: 'SUBMIT_OK' });
-    } catch (err) {
+    } catch (error) {
       dispatch({
         type: 'SUBMIT_FAILED',
-        reason: err instanceof Error ? err.message : String(err),
+        reason: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -3169,7 +4204,7 @@ export function createGame() {
 
       {#if game.state.phase === 'leaderboard'}
         <ol class="leaderboard">
-          {#each game.leaderboard as row, i (i)}
+          {#each game.leaderboard as row (row.id)}
             <li><span>{row.playerName}</span><span>{row.score}</span></li>
           {/each}
         </ol>
@@ -3309,7 +4344,7 @@ Add to the root `package.json` scripts:
 
 - [ ] **Step 8: Play it**
 
-With `npm run emulators` running and `npm run seed` already done:
+Two terminals. First `npm run server`, then:
 
 ```bash
 npm run dev
@@ -3320,280 +4355,102 @@ Open http://localhost:5173 and verify, in order:
 1. A country outline renders with a red dot on it.
 2. The timer counts down and the bar shrinks.
 3. Pressing `1`–`4` picks an answer; so does clicking.
-4. A correct pick turns green, a wrong pick turns red and the correct one still turns green.
+4. A correct pick turns green; a wrong pick turns red and the correct one still turns green.
 5. The score increases faster for quick answers, and the streak badge appears from two consecutive correct answers.
 6. Letting the timer expire scores nothing and advances.
 7. After 10 questions the results screen shows, saving works, and the leaderboard lists the run.
 8. Reload and play again — the previous run is still on the leaderboard.
 
-- [ ] **Step 9: Verify the emulator-down error path**
+- [ ] **Step 9: Verify the server-down error path**
 
-Stop the emulator (Ctrl-C) and reload the page. Expected: the "Cannot start" screen naming `127.0.0.1:8080` and telling you to run `npm run emulators`, appearing within about two seconds — not a blank page and not an indefinite spinner.
+Stop the API server (Ctrl-C in its terminal) and reload the page.
 
-Restart the emulator and reload to confirm recovery.
+Expected: the "Cannot start" screen naming `127.0.0.1:8787` and telling you to run `npm run server`, appearing within about two seconds — not a blank page and not an indefinite spinner.
+
+Restart the server and reload to confirm recovery.
 
 - [ ] **Step 10: Verify the not-seeded error path**
 
-Stop the emulator, delete `.emulator-data`, restart it, and reload the page without seeding. Expected: the error screen telling you to run `npm run seed`. Then run `npm run seed` and reload.
-
-- [ ] **Step 11: Commit**
+Stop the server, delete the database, restart the server, and reload the page without seeding:
 
 ```bash
-git add apps package.json package-lock.json
-git commit -m "feat(web): add playable quiz app"
+rm -rf .data && npm run server
 ```
 
----
+Expected: the error screen telling you to run `npm run seed`. Then run `npm run seed`, restart the server, and reload.
 
-### Task 13: Security rules tests
+- [ ] **Step 11: Verify a failed save keeps the score on screen**
 
-**Files:**
-- Create: `packages/rules-tests/package.json`, `packages/rules-tests/src/rules.test.ts`
-- Modify: root `package.json` (add the `test:rules` script), `vitest.config.ts`
+Play a full run. On the results screen, stop the API server, then click "Save score".
 
-**Interfaces:**
-- Consumes: `firestore.rules` from Task 1.
-- Produces: the `npm run test:rules` script.
+Expected: the score stays visible, a banner reports the failure, and the button becomes clickable again. Restart the server and click it again — the save succeeds and the leaderboard appears. A finished run must never be lost to a write error.
 
-- [ ] **Step 1: Create the package**
-
-`packages/rules-tests/package.json`:
-
-```json
-{
-  "name": "@capitales/rules-tests",
-  "version": "0.0.0",
-  "private": true,
-  "type": "module"
-}
-```
-
-```bash
-npm install -w @capitales/rules-tests -D @firebase/rules-unit-testing firebase
-```
-
-- [ ] **Step 2: Exclude these tests from the default run**
-
-They need a live emulator, so `npm test` must not pick them up. Change `vitest.config.ts`:
-
-```ts
-import { defineConfig } from 'vitest/config';
-
-export default defineConfig({
-  test: {
-    include: ['packages/**/src/**/*.test.ts'],
-    exclude: ['**/node_modules/**', 'packages/rules-tests/**'],
-    environment: 'node',
-  },
-});
-```
-
-- [ ] **Step 3: Write the rules tests**
-
-`packages/rules-tests/src/rules.test.ts`:
-
-```ts
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import {
-  assertFails,
-  assertSucceeds,
-  initializeTestEnvironment,
-  type RulesTestEnvironment,
-} from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
-import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
-
-const ROOT = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '..',
-  '..',
-  '..',
-);
-
-let env: RulesTestEnvironment;
-
-function run(uid: string) {
-  return {
-    playerName: 'Tester',
-    uid,
-    score: 1234,
-    correctCount: 7,
-    bestStreak: 3,
-    questionCount: 10,
-    answers: [],
-  };
-}
-
-beforeAll(async () => {
-  env = await initializeTestEnvironment({
-    projectId: 'demo-capitales-rules',
-    firestore: {
-      host: '127.0.0.1',
-      port: 8080,
-      rules: readFileSync(path.join(ROOT, 'firestore.rules'), 'utf8'),
-    },
-  });
-});
-
-afterAll(async () => {
-  await env.cleanup();
-});
-
-beforeEach(async () => {
-  await env.clearFirestore();
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(ctx.firestore(), 'countries/FRA'), {
-      code: 'FRA',
-      name: 'France',
-      capital: 'Paris',
-    });
-    await setDoc(doc(ctx.firestore(), 'runs/existing'), run('alice'));
-  });
-});
-
-describe('countries', () => {
-  it('is readable by a signed-in user', async () => {
-    const db = env.authenticatedContext('alice').firestore();
-    await assertSucceeds(getDoc(doc(db, 'countries/FRA')));
-  });
-
-  it('is not readable when signed out', async () => {
-    const db = env.unauthenticatedContext().firestore();
-    await assertFails(getDoc(doc(db, 'countries/FRA')));
-  });
-
-  it('is not writable, even by a signed-in user', async () => {
-    const db = env.authenticatedContext('alice').firestore();
-    await assertFails(setDoc(doc(db, 'countries/FRA'), { capital: 'Berlin' }));
-  });
-});
-
-describe('runs', () => {
-  it('lets a user create a run under their own uid', async () => {
-    const db = env.authenticatedContext('alice').firestore();
-    await assertSucceeds(setDoc(doc(db, 'runs/mine'), run('alice')));
-  });
-
-  it('stops a user creating a run under someone else uid', async () => {
-    const db = env.authenticatedContext('mallory').firestore();
-    await assertFails(setDoc(doc(db, 'runs/forged'), run('alice')));
-  });
-
-  it('stops an anonymous client creating a run', async () => {
-    const db = env.unauthenticatedContext().firestore();
-    await assertFails(setDoc(doc(db, 'runs/anon'), run('alice')));
-  });
-
-  it('is publicly readable, so the leaderboard works signed out', async () => {
-    const db = env.unauthenticatedContext().firestore();
-    await assertSucceeds(getDoc(doc(db, 'runs/existing')));
-  });
-
-  it('stops a user editing their own past score', async () => {
-    const db = env.authenticatedContext('alice').firestore();
-    await assertFails(
-      setDoc(doc(db, 'runs/existing'), { ...run('alice'), score: 999999 }),
-    );
-  });
-
-  it('stops a user deleting a run', async () => {
-    const db = env.authenticatedContext('alice').firestore();
-    await assertFails(deleteDoc(doc(db, 'runs/existing')));
-  });
-});
-```
-
-- [ ] **Step 4: Add the script**
-
-Add to the root `package.json` scripts:
-
-```json
-"test:rules": "vitest run --dir packages/rules-tests --config vitest.rules.config.ts"
-```
-
-And create `vitest.rules.config.ts` at the root:
-
-```ts
-import { defineConfig } from 'vitest/config';
-
-export default defineConfig({
-  test: {
-    include: ['packages/rules-tests/src/**/*.test.ts'],
-    environment: 'node',
-    // The rules emulator is shared state; parallel files would clear each
-    // other's data mid-test.
-    fileParallelism: false,
-  },
-});
-```
-
-- [ ] **Step 5: Run the rules tests**
-
-With `npm run emulators` running:
-
-```bash
-npm run test:rules
-```
-
-Expected: PASS, 9 tests.
-
-If every test fails with a connection error, the emulator is not running. If only the `assertFails` tests fail, the rules are more permissive than intended — read `firestore.rules` against spec §5.4 before changing any test.
-
-- [ ] **Step 6: Run the full suite one last time**
+- [ ] **Step 12: Run the whole suite**
 
 ```bash
 npm test
 ```
 
-Expected: PASS across `core`, `geo` and `data` — 88 tests, no emulator required.
-With the 9 rules tests that is 97 in total.
+Expected: PASS — 136 tests across `core`, `geo`, `data` and `server`, with nothing running beforehand. The API tests start their own server on an ephemeral port against an in-memory database.
 
-- [ ] **Step 7: Update the README**
+- [ ] **Step 13: Update the README**
 
-Add a Testing section:
+Replace the Running section with:
 
 ```markdown
-## Testing
+## Running
 
-    npm test          # core, geo and data — pure, no emulator needed
-    npm run test:rules   # Firestore security rules — needs `npm run emulators`
+Once, to load the country data:
+
+    npm run seed
+
+Then two terminals:
+
+    npm run server     # API on http://127.0.0.1:8787
+    npm run dev        # app on http://localhost:5173
 ```
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 14: Commit**
 
 ```bash
-git add packages/rules-tests vitest.config.ts vitest.rules.config.ts package.json package-lock.json README.md
-git commit -m "test: verify firestore security rules against the emulator"
+git add apps package.json package-lock.json README.md
+git commit -m "feat(web): add playable quiz app"
 ```
 
 ---
 
 ## Plan self-review
 
-**Spec coverage (phases 1–6):**
+**Spec coverage (build-order phases 1–6):**
 
 | Spec section | Covered by |
 |---|---|
-| §3 Stack | Tasks 1, 2, 3, 5, 11, 12 |
-| §4 Repository layout | Tasks 1–3, 5, 10–12 |
+| §3 Stack | Tasks 1, 2, 3, 4, 5, 10, 12, 13 |
+| §4 Repository layout | Tasks 1–5, 10–13 |
 | §5.1 Static geometry, `ADM0_A3` keying | Tasks 3, 5 |
-| §5.2 Firestore model | Tasks 3, 4, 10 |
-| §5.3 Anonymous auth | Task 10 |
-| §5.4 Security rules | Tasks 1, 13 |
+| §5.2 SQL schema | Task 4 |
+| §5.3 No identity | Task 10 — no auth code exists, and the server binds `127.0.0.1` |
+| §5.4 API surface, append-only guarantee | Task 10 (steps 1, 3, 8) |
 | §5.5 ETL and seeding | Tasks 3, 4 |
-| §5.6 Data edge cases | Task 3 (`overrides.json` + validation tests) |
+| §5.6 Data edge cases | Task 3 (`overrides.json` + validation tests), Task 4 step 9 |
 | §6 Game rules | Tasks 7, 8 |
 | §7 State machine | Task 9 |
-| §8 Rendering | Tasks 5, 6, 11 |
-| §9 `apps/web` variant | Task 12 |
-| §10 Error handling | Tasks 10, 12 (steps 9–10), 9 (`SUBMIT_FAILED`) |
+| §8 Rendering | Tasks 5, 6, 12 |
+| §9 `apps/web` variant | Task 13 |
+| §10 Error handling | Tasks 10 (500 path), 11 (probe, boot errors), 13 (steps 9–11), 9 (`SUBMIT_FAILED`) |
 | §11 Accepted limitations | No task needed — a documented non-goal |
-| §12 Testing (core, geo, rules) | Tasks 2, 3, 5–10, 13 |
-| §13 Dev workflow scripts | Tasks 1, 3, 4, 12, 13 |
+| §12 Testing | Tasks 2, 3, 4, 5–11; 136 tests, all in one `npm test` |
+| §13 Dev workflow scripts | Tasks 1, 3, 4, 10, 13 |
 | §9 `apps/mobile`, `apps/desktop`; §12 e2e | **Plan 2**, deliberately out of scope |
 
-**Type consistency:** `Country.code` is used identically in `capitals.json`, the Firestore document id, TopoJSON feature ids, `buildAtlas`'s map key, and `AnswerRecord.code`. `LonLat` is `[lon, lat]` in `types.ts`, the ETL output, `fitCountry`'s parameter, and the tests. `QUESTION_MS` is defined once in `scoring.ts` and imported by `game.ts` and the web store. `Question.correctIndex` is produced in Task 8 and consumed in Tasks 9 and 12 under the same name.
+**Type consistency:** `Country.code` is the same string in `capitals.json`, the `countries` primary key, TopoJSON feature ids, `buildAtlas`'s map key, and `AnswerRecord.code`. `LonLat` is `[lon, lat]` in `types.ts`, the ETL output, the `capital_lon`/`capital_lat` columns, and `fitCountry`'s parameter. `AnswerRecord`, `RunInput` and `RunSummary` are declared once in `packages/core/src/types.ts` (Task 3) and consumed by the reducer (Task 9), the data layer (Task 4), the routes (Task 10), and the client (Task 11) — no task redeclares them. `QUESTION_MS` is defined once in `scoring.ts` and imported by `game.ts` and the web store. `Question.correctIndex` is produced in Task 8 and consumed in Tasks 9 and 13 under the same name.
 
-**Known deviation from the spec, deliberate:** spec §5.2 names the field `capitalLonLat` and gives Paris as `[2.3522, 48.8586]`; the ETL takes the exact coordinate from Natural Earth's geometry instead of that literal, so the committed value will differ in the last decimals. The spec value is illustrative, not authoritative.
+**Layering:** `packages/core` imports nothing from `geo`, `data`, `ui`, Svelte, the DOM or `node:*`. `apps/server` is the only module importing `node:sqlite` or containing SQL. `packages/data/client.ts` speaks JSON over relative `/api` paths and knows no host — Vite's proxy supplies it, which is why Plan 2's shells need no client changes.
+
+**Task boundaries:** each task ends with something independently runnable — the ETL prints 193, the seed script prints 193, `fitCountry` renders France, the server answers `curl`, the app is playable. A reviewer can reject any one without blocking its neighbour, except that Task 11 depends on Task 10's endpoints existing and Task 13 depends on everything.
+
+**Known deviations from the spec, deliberate:**
+
+1. Spec §5.2 gives Paris as `[2.3522, 48.8586]`; the ETL takes the exact coordinate from Natural Earth's geometry instead of that literal, so the committed value will differ in the last decimals. The spec value is illustrative, not authoritative.
+2. `topRuns` sorts by `score DESC, finished_at ASC` where the spec says only "highest score first". The tiebreak is added so a leaderboard with equal scores does not reshuffle between page loads.
+3. Task 10 clamps `playerName` to 40 characters and `?limit=` to 100. Neither bound is in the spec; both prevent a trivially malformed request from writing unbounded data.
