@@ -9,7 +9,8 @@
     "verbatimModuleSyntax": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    "types": ["node"]
   },
   "include": ["packages/*/src/**/*.ts", "apps/*/src/**/*.ts"]
 }

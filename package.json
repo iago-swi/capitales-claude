@@ -9,7 +9,8 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -p tsconfig.base.json --noEmit"
+    "typecheck": "tsc -p tsconfig.base.json --noEmit",
+    "build:data": "tsx packages/data/src/build-data.ts"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

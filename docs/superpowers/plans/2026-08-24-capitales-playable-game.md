@@ -89,11 +89,14 @@ Expected: `node:sqlite ok [ { x: 1 } ]`. If this errors with "Cannot find module
     "verbatimModuleSyntax": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    "types": ["node"]
   },
   "include": ["packages/*/src/**/*.ts", "apps/*/src/**/*.ts"]
 }
 ```
+
+`"types": ["node"]` is required, not optional: without it every `node:fs`, `node:path` and `Buffer` reference in the ETL, the server and the seed script fails with TS2591, even with `@types/node` installed.
 
 `noUncheckedIndexedAccess` matters here: this codebase indexes into option arrays and country pools constantly, and it forces those accesses to be guarded.
 
@@ -474,9 +477,19 @@ export * from './types.js';
 Then, from the repository root:
 
 ```bash
-npm install -w @capitales/data d3-geo topojson-server topojson-simplify topojson-client
-npm install -w @capitales/data -D @types/d3-geo @types/topojson-client @types/topojson-specification @types/geojson
+npm install -w @capitales/data --save d3-geo topojson-server topojson-simplify topojson-client
+npm install -w @capitales/data -D @types/d3-geo @types/topojson-client @types/topojson-server @types/topojson-simplify @types/topojson-specification @types/geojson
 ```
+
+Pass `--save` explicitly: npm has been observed reporting success on the workspace install without writing the runtime dependencies. Verify before continuing:
+
+```bash
+node -e "console.log(require('./packages/data/package.json').dependencies)"
+```
+
+Expected: `d3-geo` and all three `topojson-*` packages present alongside `@capitales/core`.
+
+`topojson-server` and `topojson-simplify` ship no bundled declarations, hence the two extra `@types` packages — without them `tsc` fails with TS7016 even though `tsx` runs the ETL fine, because `tsx` strips types without checking them.
 
 - [ ] **Step 3: Write `overrides.json`**
 
