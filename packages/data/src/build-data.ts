@@ -10,13 +10,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { geoCentroid } from 'd3-geo';
 import { topology } from 'topojson-server';
-import topojsonSimplify from 'topojson-simplify';
 import { quantize } from 'topojson-client';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import type { Objects, Topology } from 'topojson-specification';
 import type { Country, LonLat } from '@capitales/core';
-
-const { presimplify, simplify } = topojsonSimplify;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(HERE, '..');
@@ -27,8 +24,20 @@ const BASE =
 const COUNTRIES_SRC = 'ne_50m_admin_0_countries.geojson';
 const PLACES_SRC = 'ne_50m_populated_places.geojson';
 
-/** Simplification weight. Measured: ~556 KB output, no country degenerates. */
-const SIMPLIFY_WEIGHT = 5e-4;
+/**
+ * Quantization snaps coordinates to a grid, which is where nearly all the size
+ * saving comes from: 1360 KB unquantized down to 640 KB, with every country's
+ * geometry still intact.
+ *
+ * There is deliberately NO simplification step. topojson-simplify prunes
+ * vertices whose triangle area falls below a weight, and Vatican City's entire
+ * polygon has an area of 1.74e-8 steradians — four orders of magnitude below
+ * even a modest 1e-4 weight — so simplifying pruned every one of its vertices
+ * and collapsed the ring to a single repeated point. That produced a feature
+ * with zero area, which makes fitExtent compute a scale of 0 and geoPath
+ * return null. Simplifying only saved a further 9 KB, so the trade was a
+ * silently destroyed country for 1.4% of the file.
+ */
 const QUANTIZE_GRID = 1e5;
 
 const SOVEREIGN_TYPES = new Set(['Country', 'Sovereign country']);
@@ -158,7 +167,7 @@ async function main(): Promise<void> {
   countries.sort((a, b) => a.code.localeCompare(b.code));
 
   // topojson-server returns Topology<Objects<GeoJsonProperties>>, where the
-  // properties may be null; topojson-simplify and -client want Objects<{}>.
+  // properties may be null; topojson-client want Objects<{}>.
   // The features carry no properties at all, so the cast is safe and this is
   // the only place the two libraries' generics have to be reconciled.
   let topo = topology({
@@ -168,7 +177,6 @@ async function main(): Promise<void> {
     } as never,
   }) as unknown as Topology<Objects<Record<string, never>>>;
 
-  topo = simplify(presimplify(topo), SIMPLIFY_WEIGHT);
   topo = quantize(topo, QUANTIZE_GRID);
 
   await writeFile(

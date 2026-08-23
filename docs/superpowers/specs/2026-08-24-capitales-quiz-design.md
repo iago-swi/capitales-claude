@@ -37,8 +37,8 @@ Deliberately excluded to keep the first version finishable:
 | Build / dev server | Vite |
 | UI framework | Svelte 5 (runes) |
 | Styling | Tailwind CSS v4 (Vite plugin) |
-| Map rendering | `d3-geo` + `topojson-client`, rendered as inline SVG |
-| Geometry data | Natural Earth **50m** admin-0 countries, trimmed and converted to TopoJSON by this project's own ETL (~556 KB, measured) |
+| Map rendering | `d3-geo` + `topojson-client`, rendered as inline SVG (see §8) |
+| Geometry data | Natural Earth **50m** admin-0 countries, trimmed and converted to TopoJSON by this project's own ETL (~640 KB, measured) |
 | Database | **SQLite**, via Node 24's built-in `node:sqlite`. No dependency, no native build. |
 | API server | Node's built-in `node:http`. Four JSON endpoints, no framework. |
 | Game state | Pure reducer in `packages/core`, wrapped in a Svelte rune store |
@@ -79,7 +79,7 @@ contained change confined to one file.
   playable countries; it omits Singapore, Malta, Monaco, Vatican, Andorra,
   Liechtenstein and every Caribbean and Pacific island state outright. It also
   forces a join on ISO numeric ids, which the `-99` sentinel breaks (§5.6).
-  50m yields 193 playable countries for 556 KB and needs no cross-dataset join.
+  50m yields 193 playable countries for 640 KB and needs no cross-dataset join.
 - **REST Countries API** as the capitals source — the v3.1 endpoint is
   deprecated and now returns an error payload instead of data.
 - **Firebase Emulator Suite** — the original choice, replaced after weighing it
@@ -112,7 +112,7 @@ Capitales/
 │  │  └─ types.ts
 │  ├─ geo/                   # projection + path generation (d3-geo, no UI)
 │  │  ├─ atlas.ts            # TopoJSON load, feature lookup by ADM0_A3 code
-│  │  └─ project.ts          # fitCountry(feature, box) -> { pathD, dotXY }
+│  │  └─ project.ts          # fitCountry(feature, capital, box)
 │  ├─ data/                  # datasets + the HTTP client the browser uses
 │  │  ├─ capitals.json        # committed ETL output: the 193 eligible countries
 │  │  ├─ countries.topo.json  # committed ETL output: trimmed 50m TopoJSON
@@ -149,7 +149,7 @@ server code and keeps the swap to any other backend a single-file change.
 
 ### 5.1 Static, bundled
 
-Country geometry is **not** stored in the database. `countries.topo.json` is ~556 KB
+Country geometry is **not** stored in the database. `countries.topo.json` is ~640 KB
 of TopoJSON that never changes, so it is a bundled static asset versioned with the
 code and committed to the repository.
 
@@ -285,8 +285,18 @@ Pipeline:
    geometry, rather than trusting any dataset field.
 6. Emit `capitals.json`, sorted by `code` for stable diffs.
 7. Emit `countries.topo.json`: the same countries' geometry, stripped of all 137
-   Natural Earth properties, converted with `topojson-server`, simplified with
-   `topojson-simplify`, and quantized to a 1e5 grid.
+   Natural Earth properties, converted with `topojson-server`, and quantized to
+   a 1e5 grid.
+
+There is deliberately **no simplification step**. `topojson-simplify` prunes
+vertices whose triangle area falls below a weight, and Vatican City's entire
+polygon covers 1.74e-8 steradians — four orders of magnitude below even a modest
+1e-4 weight. Simplifying pruned every one of its vertices and collapsed the ring
+to a single repeated point, producing a feature of zero area; `fitExtent` then
+computes a scale of 0 and `geoPath` returns null, so Vatican City could not be
+drawn at all. Quantization alone takes the file from 1360 KB to 640 KB;
+simplification on top saved a further 9 KB. Trading a silently destroyed country
+for 1.4% of the file size is not a trade worth making.
 
 The ETL **fails loudly** if it encounters a multi-capital country or a
 capital-less sovereign country that `overrides.json` does not mention. New
@@ -416,16 +426,66 @@ Two rules make this testable:
 
 ## 8. Rendering
 
-`geo/project.ts` exports `fitCountry(feature, box) -> { pathD, dotXY }`.
+`geo/project.ts` exports
+`fitCountry(feature, capitalLonLat, box) -> { pathD, dotXY, bounds }`.
 
-It builds a `geoAzimuthalEqualArea` projection centred on the country's centroid,
-calls `projection.fitExtent(box, feature)` to scale and translate so the country
-fills the viewport, then uses `geoPath(projection)` for the outline and
+It builds a `geoAzimuthalEqualArea` projection centred on the country, calls
+`projection.fitExtent(box, …)` to scale and translate so the country fills the
+viewport, then uses `geoPath(projection)` for the outline and
 `projection(capitalLonLat)` for the dot.
 
 Because the outline and the dot pass through the same projection instance they
 cannot drift out of sync. An equal-area projection avoids the Mercator distortion
 that would render Greenland and Canada absurdly and subtly leak difficulty cues.
+
+### 8.1 Fitting to the capital's landmass
+
+Natural Earth stores a country's overseas territories in the **same feature** as
+its mainland. France therefore spans 118° of longitude, from Guadeloupe at
+−61.8° to Réunion at +55.8°, and its centroid falls in the Atlantic Ocean.
+Fitting the viewport to the whole feature reduces metropolitan France to a few
+unrecognisable specks. 25 countries have a full extent at least twice their main
+landmass; 14 at least five times.
+
+So `fitCountry` first calls `capitalCluster(feature, capital)`, which returns the
+landmass the capital stands on plus every part chained to it within **8°** of
+great-circle distance, and fits and draws that instead.
+
+Two details are load-bearing:
+
+- **The seed is the part that _contains_ the capital**, found with `geoContains`,
+  not the part whose centroid is nearest. Nearest-centroid is wrong because a
+  large country's centroid can be further from its capital than a small exclave's
+  is: Moscow is 9.3° from Kaliningrad's centroid but much further from the
+  centroid of the main Russian landmass out in Siberia, so nearest-centroid
+  renders Kaliningrad as Russia. The fallback, for capitals just offshore of
+  their own outline, is the part with the nearest *vertex* — still the right
+  landmass.
+- **Parts are chained, not filtered by distance from the seed.** That lets a
+  strung-out archipelago such as the Ryukyus connect Okinawa back to Honshu
+  through the islands between them.
+
+The 8° threshold was tuned against the whole dataset: it keeps Canada's arctic
+archipelago, Indonesia's 133 islands, Japan and the Philippines intact while
+dropping France's overseas departments and the Netherlands' Caribbean
+municipalities. At 5° it starts chopping Canada; at 12° the Galápagos come back
+into Ecuador.
+
+### 8.2 Keeping the capital in frame
+
+20 of the 193 capitals fall outside their own country's polygon at 50m
+resolution — Lisbon, Stockholm, Beirut, Nassau, Monaco, Vatican City and other
+coastal cities — by between 0.3 and 3.8 km, because the coastline is coarser
+than the city's position. For a large country that is a sub-pixel error. But
+Vatican City sits 1.2 km outside a country only 1.1 km wide, so its marker would
+render completely off-frame.
+
+`fitCountry` therefore widens the fitted extent to include the capital point,
+but **only when the capital is within 50 km of the outline**. The cap is what
+keeps this honest: widening unconditionally would mean any coordinate, including
+a transposed `[lat, lon]` pair, gets framed and made to look plausible. At 50 km
+a genuine coastal offset is absorbed while a swapped Paris — 6000 km adrift —
+stays far outside the frame where the tests catch it.
 
 `CountryMap.svelte` is a dumb component: it receives `pathD` and `dotXY` and
 renders an `<svg>` with one `<path>` and one `<circle>`. It performs no

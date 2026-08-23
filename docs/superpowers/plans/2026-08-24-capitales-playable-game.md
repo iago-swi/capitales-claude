@@ -6,7 +6,7 @@
 
 **Architecture:** An npm-workspaces monorepo with a framework-free core. `packages/core` holds pure game logic (RNG, question generation, scoring, a clock-free reducer) and imports nothing from the DOM, Svelte, HTTP or `node:*`. `packages/geo` turns country geometry into SVG path strings via `d3-geo`. `packages/data` owns the Natural Earth ETL and a `fetch` wrapper around the API — no SQL. `apps/server` is the only module that touches SQLite: three tables, four JSON endpoints, no framework. `packages/ui` holds Svelte primitives, and `apps/web` composes them. Later plans add the mobile and Electron shells over the same core without touching it.
 
-**Tech Stack:** TypeScript, Vite, Svelte 5 (runes), Tailwind CSS v4, `d3-geo`, `topojson-client`/`-server`/`-simplify`, Node 24's built-in `node:sqlite` and `node:http`, Vitest.
+**Tech Stack:** TypeScript, Vite, Svelte 5 (runes), Tailwind CSS v4, `d3-geo`, `topojson-client` and `topojson-server`, Node 24's built-in `node:sqlite` and `node:http`, Vitest.
 
 **Spec:** `docs/superpowers/specs/2026-08-24-capitales-quiz-design.md`
 
@@ -477,8 +477,8 @@ export * from './types.js';
 Then, from the repository root:
 
 ```bash
-npm install -w @capitales/data --save d3-geo topojson-server topojson-simplify topojson-client
-npm install -w @capitales/data -D @types/d3-geo @types/topojson-client @types/topojson-server @types/topojson-simplify @types/topojson-specification @types/geojson
+npm install -w @capitales/data --save d3-geo topojson-server topojson-client
+npm install -w @capitales/data -D @types/d3-geo @types/topojson-client @types/topojson-server @types/topojson-specification @types/geojson
 ```
 
 Pass `--save` explicitly: npm has been observed reporting success on the workspace install without writing the runtime dependencies. Verify before continuing:
@@ -489,7 +489,7 @@ node -e "console.log(require('./packages/data/package.json').dependencies)"
 
 Expected: `d3-geo` and all three `topojson-*` packages present alongside `@capitales/core`.
 
-`topojson-server` and `topojson-simplify` ship no bundled declarations, hence the two extra `@types` packages — without them `tsc` fails with TS7016 even though `tsx` runs the ETL fine, because `tsx` strips types without checking them.
+`topojson-server` ships no bundled declarations, hence the extra `@types` package — without them `tsc` fails with TS7016 even though `tsx` runs the ETL fine, because `tsx` strips types without checking them.
 
 - [ ] **Step 3: Write `overrides.json`**
 
@@ -557,12 +557,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { geoCentroid } from 'd3-geo';
 import { topology } from 'topojson-server';
-import topojsonSimplify from 'topojson-simplify';
 import { quantize } from 'topojson-client';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import type { Country, LonLat } from '@capitales/core';
-
-const { presimplify, simplify } = topojsonSimplify;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(HERE, '..');
@@ -573,8 +570,15 @@ const BASE =
 const COUNTRIES_SRC = 'ne_50m_admin_0_countries.geojson';
 const PLACES_SRC = 'ne_50m_populated_places.geojson';
 
-/** Simplification weight. Measured: 556 KB output, no country degenerates. */
-const SIMPLIFY_WEIGHT = 5e-4;
+/**
+ * Quantization is the whole size saving: 1360 KB unquantized down to 640 KB,
+ * with every country's geometry intact.
+ *
+ * There is deliberately NO simplification step. topojson-simplify prunes
+ * vertices below an area weight, and Vatican City's entire polygon covers
+ * 1.74e-8 steradians, so simplifying collapsed it to a single point and it
+ * could not be drawn at all. Simplifying saved only a further 9 KB.
+ */
 const QUANTIZE_GRID = 1e5;
 
 const SOVEREIGN_TYPES = new Set(['Country', 'Sovereign country']);
@@ -704,7 +708,6 @@ async function main(): Promise<void> {
   let topo = topology({
     countries: { type: 'FeatureCollection', features: keptFeatures } as never,
   });
-  topo = simplify(presimplify(topo), SIMPLIFY_WEIGHT);
   topo = quantize(topo, QUANTIZE_GRID);
 
   await writeFile(
@@ -746,7 +749,7 @@ Expected output:
 
 ```
 countries written: 193
-topojson: 556 KB
+topojson: 640 KB
 skipped 10 dependencies: ABW (Aruba), ALD (Åland), CUW (Curaçao), GGY (Guernsey), GRL (Greenland), HKG (Hong Kong), IMN (Isle of Man), JEY (Jersey), MAC (Macao), SXM (Sint Maarten)
 ```
 
