@@ -44,7 +44,19 @@ npm run dev         # the game on http://localhost:5173
 
 ## 2. Where the SQLite file is
 
-**`.data/capitales.db`** at the repository root. It's gitignored.
+Two locations, depending on how you run it:
+
+| How you run it | Database |
+|---|---|
+| `npm run server` / `npm run dev` | `.data/capitales.db` in the repository, gitignored |
+| The installed or portable Windows app | `%APPDATA%\Capitales\capitales.db` |
+| The Linux tarball | `~/.config/Capitales/capitales.db` |
+
+They are separate files, so a run played in the browser does not appear on the
+desktop app's leaderboard. Development state and the real app's state stay apart
+on purpose.
+
+The rest of this section is about the development one.
 
 It is *derived state*: `npm run seed` rebuilds every country row from committed
 inputs, so deleting it costs you nothing but your local high scores. If you
@@ -149,12 +161,13 @@ Capitales/
 │  ├─ data/    the Natural Earth ETL + the browser's fetch client. No SQL.
 │  │           build-data · client · capitals.json · countries.topo.json
 │  └─ ui/      Svelte components: CountryMap, Timer, AnswerButton,
-│              Scoreboard, LanguageToggle
+│              Scoreboard, LanguageToggle, Wordmark
 └─ apps/
    ├─ server/  the ONLY module that touches SQLite
    │           schema · db · routes · host · server · seed
    ├─ web/     Vite + Svelte 5, composes everything
-   └─ desktop/ Electron shell for Windows; hosts the server in-process
+   └─ desktop/ Electron shell for Windows and Linux; hosts the server
+               in its own process
 ```
 
 The dependency direction is strictly one-way:
@@ -482,8 +495,24 @@ npm run package:linux    # Linux tarball      -> apps/desktop/release
 npm run icons            # re-render icons from the SVGs
 ```
 
-`Capitales Setup 0.0.0.exe` is about 101 MB, which is Electron's floor: the
-installer carries a whole Chromium.
+`npm run package:win` produces two files, both about 101 MB — Electron's floor,
+since each carries a whole Chromium:
+
+| File | What it is |
+|---|---|
+| `Capitales-0.0.0-setup.exe` | Installer. Adds a Start-menu shortcut and an uninstaller, and lets you pick the install directory. |
+| `Capitales-0.0.0-portable.exe` | **No installation.** Double-click and it runs. Nothing is added to the Start menu and there is nothing to uninstall — delete the file and it is gone. |
+
+The portable build unpacks itself to `%TEMP%\Capitales-<version>\` on first
+run and reuses that folder afterwards, rather than re-extracting 100 MB each
+time.
+
+It still keeps its database in `%APPDATA%\Capitales\`, not beside the
+executable. That is deliberate: a portable app is often run from a USB stick or
+a read-only share, and writing next to the binary would fail there. The
+trade-off is that "portable" here means *no installation*, not *no trace* —
+your high scores survive deleting the exe, and follow you if you replace it
+with a newer one.
 
 **The server runs inside the Electron main process**, not as a spawned child.
 That is only possible because `apps/server` is a plain Node module with no
@@ -550,11 +579,13 @@ the repository.
 
 - **`apps/mobile`** — planned, touch-first layout over the same components
 - A Playwright end-to-end suite
-- A real application icon; the build currently uses Electron's default
-- Code signing, so Windows SmartScreen will warn on first run
+- **Code signing.** Neither Windows build is signed, so SmartScreen warns on
+  first run. Signing needs a certificate, which costs money.
+- **AppImage and `.deb`**, which are configured but need a Linux machine, WSL or
+  Docker to actually build (§14)
 
 Deliberately out of scope: region and difficulty selection, spaced repetition,
 and a review-your-mistakes screen.
 
 The full design document and the implementation plan live in
-`docs/superpowers/`.
+`docs/superpowers/`. A French version of this document is in `PROJET.md`.
