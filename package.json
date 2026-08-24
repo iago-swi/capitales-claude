@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.base.json --noEmit",
     "build:data": "tsx packages/data/src/build-data.ts",
-    "seed": "tsx apps/server/src/seed.ts"
+    "seed": "tsx apps/server/src/seed.ts",
+    "server": "tsx apps/server/src/server.ts"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
