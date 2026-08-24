@@ -530,7 +530,14 @@
     flex-direction: column;
     gap: clamp(0.35rem, 1vh, 0.7rem);
     align-items: center;
-    padding: clamp(0.7rem, 1.8vh, 1.2rem) 1.6rem;
+    /*
+     * Without this the box sizes to its content — input plus button plus
+     * padding — and simply overhangs a narrow screen, taking the Save button
+     * off the edge with it. `.results` centres its children rather than
+     * stretching them, so nothing else was constraining the width.
+     */
+    max-width: 100%;
+    padding: clamp(0.7rem, 1.8vh, 1.2rem) clamp(0.9rem, 4vw, 1.6rem);
     border: 1px solid var(--brass-dim);
     border-radius: 4px;
     background: color-mix(in oklab, var(--brass) 8%, transparent);
@@ -548,8 +555,13 @@
   .claim-row {
     display: flex;
     gap: 0.5rem;
+    width: 100%;
   }
   input {
+    /* min-width:0 lets the field shrink; a text input otherwise refuses to go
+       below its default intrinsic size and pushes its neighbour off-screen. */
+    flex: 1 1 auto;
+    min-width: 0;
     padding: 0.6rem 0.8rem;
     border: 1px solid var(--grid);
     border-radius: 3px;
@@ -661,6 +673,16 @@
     }
     .tally-score {
       font-size: 2.2rem;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .claim-row {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .claim-row .cta {
+      justify-content: center;
     }
   }
 

@@ -603,6 +603,20 @@ claimed score persists across reloads.
 **What it gives up:** SQLite, and a leaderboard shared between browsers. Scores
 live in that browser's `localStorage` — per browser, per machine.
 
+The name-entry box on the results screen sized itself to its contents — input,
+button and padding — and simply overhung a narrow screen, carrying the Save
+button off the edge. `.results` centres its children rather than stretching
+them, so nothing was constraining the width. It now has `max-width: 100%`, the
+input can shrink (`min-width: 0`, which a text input otherwise refuses to do),
+and below 480px the field stacks above the button, which is a better tap target
+that way anyway.
+
+This one is worth remembering as a testing lesson rather than a CSS one. The
+earlier sweep across 360×640 reported no overflow because the leaderboard was
+full, so the run did not qualify and **the box never rendered**. Only a first
+run on an empty board reaches that branch. Measuring a screen is not the same as
+measuring its states.
+
 ### Android
 
 ```bash

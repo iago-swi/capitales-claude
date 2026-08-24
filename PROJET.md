@@ -661,6 +661,20 @@ questions se joue, et un score revendiqué survit au rechargement.
 scores vivent dans le `localStorage` de ce navigateur — par navigateur, par
 machine.
 
+La boîte de saisie du nom, sur l'écran de résultats, se dimensionnait sur son
+contenu — champ, bouton et marge intérieure — et débordait simplement d'un écran
+étroit, emportant le bouton Enregistrer hors du cadre. `.results` centre ses
+enfants au lieu de les étirer, donc rien ne contraignait la largeur. Elle a
+désormais `max-width: 100%`, le champ peut rétrécir (`min-width: 0`, ce qu'un
+champ texte refuse autrement), et sous 480 px il se place au-dessus du bouton —
+qui devient au passage une meilleure cible tactile.
+
+Celui-là vaut surtout comme leçon de test, pas de CSS. Le balayage précédent en
+360×640 n'avait rien signalé parce que le classement était plein : le score ne
+qualifiait pas, donc **la boîte ne s'affichait jamais**. Seule une première
+partie sur un classement vide atteint cette branche. Mesurer un écran n'est pas
+mesurer ses états.
+
 ### Android
 
 ```bash
