@@ -1,0 +1,20 @@
+{
+  "name": "@capitales/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@capitales/core": "*",
+    "@capitales/data": "*",
+    "@capitales/geo": "*",
+    "@capitales/ui": "*",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@fontsource/instrument-serif": "^5.3.0"
+  }
+}

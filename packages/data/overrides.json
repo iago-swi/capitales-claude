@@ -1,0 +1,55 @@
+{
+  "_comment": "Hand-curated corrections to Natural Earth 50m. See spec section 5.6.",
+  "canonicalCapital": {
+    "ZAF": {
+      "capital": "Pretoria",
+      "altCapitals": [
+        "Cape Town",
+        "Bloemfontein"
+      ],
+      "why": "NE lists four Admin-0 capitals for ZAF including Johannesburg, which is not a capital at all."
+    },
+    "BOL": {
+      "capital": "Sucre",
+      "altCapitals": [
+        "La Paz"
+      ],
+      "why": "Sucre is constitutional, La Paz is the seat of government."
+    },
+    "CIV": {
+      "capital": "Yamoussoukro",
+      "altCapitals": [
+        "Abidjan"
+      ],
+      "why": "Yamoussoukro is official, Abidjan is the economic capital."
+    },
+    "MMR": {
+      "capital": "Naypyidaw",
+      "altCapitals": [],
+      "why": "Yangon is the former capital and is not accepted."
+    }
+  },
+  "injectCapital": {
+    "SDS": {
+      "capital": "Juba",
+      "lonLat": [
+        31.5825,
+        4.8517
+      ],
+      "why": "South Sudan has no Admin-0 capital point in the 50m dataset.",
+      "capitalFr": "Djouba"
+    },
+    "NRU": {
+      "capital": "Yaren",
+      "lonLat": [
+        166.9209,
+        -0.5477
+      ],
+      "why": "Nauru has no Admin-0 capital point in the 50m dataset.",
+      "capitalFr": "Yaren"
+    }
+  },
+  "exclude": {
+    "CYN": "Northern Cyprus: disputed, recognised only by Turkey."
+  }
+}

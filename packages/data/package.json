@@ -1,0 +1,22 @@
+{
+  "name": "@capitales/data",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./capitals.json": "./capitals.json",
+    "./countries.topo.json": "./countries.topo.json"
+  },
+  "dependencies": {
+    "@capitales/core": "*",
+    "topojson-client": "^3.1.0",
+    "topojson-server": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/geojson": "^7946.0.16",
+    "@types/topojson-client": "^3.1.5",
+    "@types/topojson-server": "^3.0.4",
+    "@types/topojson-specification": "^1.0.5"
+  }
+}
