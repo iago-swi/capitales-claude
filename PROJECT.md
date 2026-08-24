@@ -544,6 +544,26 @@ Electron rather than Tauri: Tauri would produce a ~5 MB installer instead of
 this machine does not have. The shell owns no game logic, so switching later is
 a contained change.
 
+**Touch.** The layout folds to one column below 940px, and below that the map
+gets the flexible row while the answers keep their natural height — without that
+the map collapsed to 205px on a phone. Measured on a 375×812 screen it is now
+329px, 41% of the viewport.
+
+The original design said "map top ~55%", which the arithmetic does not allow:
+four 60px tap targets plus their gaps are 266 incompressible pixels, so ~41% is
+the honest ceiling. What bought the extra 124px was removing rows that earn
+their place on a desktop and not on a phone — the section eyebrow that repeats
+the question below it, the caption labelling a dot that needs no label, and a
+footer that is empty outside the title screen.
+
+On coarse pointers the A–D key badges are hidden, since they advertise a
+keyboard that is not there, and hover states give way to an `:active` press.
+`env(safe-area-inset-*)` keeps the frame clear of notches and gesture bars.
+
+The two-column leaderboard is gated to screens at least 560px wide: it exists to
+reclaim *vertical* space on a short laptop window, and on a 360px phone two
+columns of names overflowed horizontally by 49px.
+
 ### The single-file build
 
 ```bash

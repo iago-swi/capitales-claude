@@ -113,4 +113,30 @@
   .answer.muted {
     opacity: 0.35;
   }
+
+  /*
+   * Touch input. The letter badge advertises a key that does not exist on a
+   * phone, so it goes — and with it the hover affordances, which on touch fire
+   * as a sticky state after a tap rather than as a preview.
+   */
+  @media (hover: none) and (pointer: coarse) {
+    kbd {
+      display: none;
+    }
+    .answer {
+      grid-template-columns: 1fr auto;
+      min-height: 60px;
+      padding: 0.8rem 1.1rem;
+    }
+    .answer:hover:not(:disabled) {
+      transform: none;
+      border-color: var(--grid);
+      background: color-mix(in oklab, var(--shelf) 55%, transparent);
+    }
+    /* Replaces hover as the "something happened" signal. */
+    .answer:active:not(:disabled) {
+      transform: scale(0.985);
+      border-color: var(--brass);
+    }
+  }
 </style>

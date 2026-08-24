@@ -596,6 +596,28 @@ Electron plutôt que Tauri : Tauri produirait un installateur de ~5 Mo au lieu d
 plusieurs gigaoctets absents de cette machine. L'enveloppe ne détient aucune
 logique de jeu, donc en changer plus tard reste une modification contenue.
 
+**Tactile.** La mise en page se replie sur une colonne sous 940 px, et en dessous
+la carte reçoit la rangée flexible tandis que les réponses gardent leur hauteur
+naturelle — sans ça la carte s'écrasait à 205 px sur téléphone. Mesurée sur un
+écran de 375×812, elle fait maintenant 329 px, soit 41 % de la hauteur.
+
+La conception d'origine annonçait « la carte sur ~55 % », ce que l'arithmétique
+interdit : quatre cibles tactiles de 60 px et leurs espacements font 266 pixels
+incompressibles, donc ~41 % est le plafond honnête. Les 124 px gagnés viennent
+de la suppression de rangées qui méritent leur place sur un écran d'ordinateur
+et pas sur un téléphone — le surtitre qui répète la question juste en dessous,
+la légende qui nomme un point n'ayant pas besoin de nom, et un pied de page vide
+en dehors de l'écran-titre.
+
+Sur pointeur grossier, les pastilles A–D sont masquées puisqu'elles annoncent un
+clavier absent, et les états de survol cèdent la place à un `:active`.
+`env(safe-area-inset-*)` écarte le cadre des encoches et des barres de gestes.
+
+Le classement en deux colonnes n'est actif qu'à partir de 560 px de large : il
+existe pour récupérer de la place *verticale* sur une fenêtre d'ordinateur
+portable, et sur un téléphone de 360 px deux colonnes de noms débordaient
+horizontalement de 49 px.
+
 ### La version fichier unique
 
 ```bash

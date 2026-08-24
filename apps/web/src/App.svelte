@@ -269,7 +269,7 @@
     {/if}
   </main>
 
-  <footer class="bar foot">
+  <footer class="bar foot" class:empty={game.state.phase !== 'ready'}>
     {#if game.state.phase === 'ready'}
       <span class="mono">
         {#if game.bestScore}
@@ -294,8 +294,14 @@
     height: 100dvh;
     max-width: 82rem;
     margin: 0 auto;
-    padding: clamp(0.7rem, 2vh, 1.4rem) clamp(1rem, 4vw, 3rem)
-      clamp(0.6rem, 1.6vh, 1.2rem);
+    /*
+     * env(safe-area-inset-*) is 0 everywhere except on a notched or
+     * gesture-bar phone, where max() lifts the padding clear of the cutout.
+     */
+    padding-top: max(clamp(0.7rem, 2vh, 1.4rem), env(safe-area-inset-top));
+    padding-bottom: max(clamp(0.6rem, 1.6vh, 1.2rem), env(safe-area-inset-bottom));
+    padding-left: max(clamp(1rem, 4vw, 3rem), env(safe-area-inset-left));
+    padding-right: max(clamp(1rem, 4vw, 3rem), env(safe-area-inset-right));
   }
 
   .bar {
@@ -330,6 +336,10 @@
   .foot {
     grid-template-columns: 1fr auto auto 1fr;
     min-height: 1.2rem;
+  }
+  /* Nothing to show outside the title screen; on a phone that is 30px of air. */
+  .foot.empty {
+    display: none;
   }
   .foot .mono:last-child {
     justify-self: end;
@@ -557,19 +567,27 @@
     margin-top: clamp(0.15rem, 0.8vh, 0.5rem);
     transition: width 200ms ease;
   }
-  .board:has(.split) {
-    width: min(40rem, 100%);
+  /*
+   * The two-column board was added to reclaim vertical space on a short laptop
+   * window. On a phone there is no horizontal room for it: two columns of names
+   * overflowed a 360px screen by 49px. Below this width the list stays single
+   * -column, where the constraint is height, not width.
+   */
+  @media (min-width: 560px) {
+    .board:has(.split) {
+      width: min(40rem, 100%);
+    }
+    .board ol.split {
+      display: grid;
+      grid-template-rows: repeat(5, auto);
+      grid-auto-flow: column;
+      column-gap: 2.5rem;
+    }
   }
   .board ol {
     list-style: none;
     padding: 0;
     margin: 0.5rem 0 0;
-  }
-  .board ol.split {
-    display: grid;
-    grid-template-rows: repeat(5, auto);
-    grid-auto-flow: column;
-    column-gap: 2.5rem;
   }
   .board li {
     display: grid;
@@ -628,15 +646,66 @@
     clip-path: inset(50%);
   }
 
+  /*
+   * Short phones with a full ten-row board. Whitespace is squeezed rather than
+   * rows hidden: dropping scores from the list to avoid a scrollbar would be
+   * solving a layout problem by removing the content the screen is for.
+   */
+  @media (max-height: 700px) and (max-width: 560px) {
+    .results {
+      padding: 0;
+      gap: 0.35rem;
+    }
+    .board {
+      margin-top: 0;
+    }
+    .tally-score {
+      font-size: 2.2rem;
+    }
+  }
+
   @media (max-width: 940px) {
     .survey {
       grid-template-columns: 1fr;
+      /*
+       * Stacked, both rows would otherwise size to their content and the map
+       * would collapse to whatever was left — 205px on a phone. Giving the
+       * chart the flexible row and the answers their natural height puts the
+       * map back at roughly half the screen, which is what it is for.
+       */
+      grid-template-rows: minmax(0, 1fr) auto;
+      gap: clamp(0.75rem, 2vh, 1.5rem);
     }
     .chart-pane {
       border-right: 0;
       border-bottom: 1px solid var(--grid);
       padding-right: 0;
-      padding-bottom: 1rem;
+      padding-bottom: clamp(0.5rem, 1.5vh, 1rem);
+    }
+    .ask {
+      justify-content: flex-start;
+      gap: 0.5rem;
+    }
+    .ask h2 {
+      margin-bottom: 0.1rem;
+      font-size: clamp(1.25rem, 5.2vw, 1.7rem);
+    }
+    /*
+     * Every row removed here is a row the map gains. The eyebrow repeats what
+     * the question underneath already says, and the chart caption labels a dot
+     * that needs no label — both are breathing room on a desktop and rent on a
+     * phone.
+     */
+    .ask .eyebrow,
+    .caption {
+      display: none;
+    }
+    .options {
+      gap: 0.4rem;
+      margin-top: 0.2rem;
+    }
+    .chart-pane {
+      gap: 0.35rem;
     }
     .bar {
       grid-template-columns: 1fr auto;
