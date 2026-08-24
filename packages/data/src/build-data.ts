@@ -8,7 +8,6 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { geoCentroid } from 'd3-geo';
 import { topology } from 'topojson-server';
 import { quantize } from 'topojson-client';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
@@ -146,13 +145,11 @@ async function main(): Promise<void> {
       altCapitals = chosen.altCapitals;
     }
 
-    const [cLon, cLat] = geoCentroid(f as Feature);
     countries.push({
       code,
       name: String(p['NAME']),
       capital,
       capitalLonLat,
-      centroid: [cLon, cLat],
       continent: String(p['CONTINENT']),
       altCapitals,
     });

@@ -14,7 +14,6 @@ function fixture(code: string, capital: string): Country {
     name: `Name of ${code}`,
     capital,
     capitalLonLat: [2.3522, 48.8566],
-    centroid: [2.45, 46.6],
     continent: 'Europe',
     altCapitals: [],
   };

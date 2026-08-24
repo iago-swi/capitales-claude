@@ -12,7 +12,6 @@ function country(code: string, capital: string): Country {
     name: code,
     capital,
     capitalLonLat: [0, 0],
-    centroid: [0, 0],
     continent: 'Europe',
     altCapitals: [],
   };

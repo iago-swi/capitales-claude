@@ -174,8 +174,6 @@ CREATE TABLE IF NOT EXISTS countries (
   capital       TEXT NOT NULL,
   capital_lon   REAL NOT NULL,
   capital_lat   REAL NOT NULL,
-  centroid_lon  REAL NOT NULL,
-  centroid_lat  REAL NOT NULL,
   continent     TEXT NOT NULL,
   alt_capitals  TEXT NOT NULL DEFAULT '[]'   -- JSON array of strings
 ) STRICT;
@@ -281,10 +279,8 @@ Pipeline:
    filter that removes dependencies without a hand-maintained blocklist).
 4. Apply `overrides.json`: force a canonical capital where several exist, inject
    the two missing ones, and drop explicitly excluded codes.
-5. Compute each country's `centroid` with `d3-geo`'s `geoCentroid` on its own
-   geometry, rather than trusting any dataset field.
-6. Emit `capitals.json`, sorted by `code` for stable diffs.
-7. Emit `countries.topo.json`: the same countries' geometry, stripped of all 137
+5. Emit `capitals.json`, sorted by `code` for stable diffs.
+6. Emit `countries.topo.json`: the same countries' geometry, stripped of all 137
    Natural Earth properties, converted with `topojson-server`, and quantized to
    a 1e5 grid.
 

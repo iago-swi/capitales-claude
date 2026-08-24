@@ -14,7 +14,6 @@ function country(
     name: code,
     capital,
     capitalLonLat: [0, 0],
-    centroid: [0, 0],
     continent,
     altCapitals,
   };

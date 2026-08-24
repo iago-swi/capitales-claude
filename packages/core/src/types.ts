@@ -8,8 +8,6 @@ export interface Country {
   /** The one answer counted as correct. */
   capital: string;
   capitalLonLat: LonLat;
-  /** Precomputed with d3-geo geoCentroid over this country's own geometry. */
-  centroid: LonLat;
   continent: string;
   /** Other names also accepted if chosen, e.g. Cape Town for South Africa. */
   altCapitals: string[];

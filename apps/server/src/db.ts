@@ -13,8 +13,6 @@ interface CountryRow {
   capital: string;
   capital_lon: number;
   capital_lat: number;
-  centroid_lon: number;
-  centroid_lat: number;
   continent: string;
   alt_capitals: string;
 }
@@ -64,7 +62,6 @@ function toCountry(row: CountryRow): Country {
     name: row.name,
     capital: row.capital,
     capitalLonLat: [row.capital_lon, row.capital_lat],
-    centroid: [row.centroid_lon, row.centroid_lat],
     continent: row.continent,
     altCapitals: JSON.parse(row.alt_capitals) as string[],
   };
@@ -81,7 +78,7 @@ export function listCountries(db: DatabaseSync): Country[] {
   const rows = db
     .prepare(
       `SELECT code, name, capital, capital_lon, capital_lat,
-              centroid_lon, centroid_lat, continent, alt_capitals
+              continent, alt_capitals
          FROM countries
         ORDER BY code`,
     )
@@ -97,15 +94,13 @@ export function seedCountries(
   const stmt = db.prepare(
     `INSERT INTO countries
        (code, name, capital, capital_lon, capital_lat,
-        centroid_lon, centroid_lat, continent, alt_capitals)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        continent, alt_capitals)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(code) DO UPDATE SET
        name         = excluded.name,
        capital      = excluded.capital,
        capital_lon  = excluded.capital_lon,
        capital_lat  = excluded.capital_lat,
-       centroid_lon = excluded.centroid_lon,
-       centroid_lat = excluded.centroid_lat,
        continent    = excluded.continent,
        alt_capitals = excluded.alt_capitals`,
   );
@@ -118,8 +113,6 @@ export function seedCountries(
         c.capital,
         c.capitalLonLat[0],
         c.capitalLonLat[1],
-        c.centroid[0],
-        c.centroid[1],
         c.continent,
         JSON.stringify(c.altCapitals),
       );

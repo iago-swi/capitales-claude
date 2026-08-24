@@ -28,14 +28,28 @@ describe('capitals.json', () => {
     }
   });
 
-  it('keeps every coordinate in range and in [lon, lat] order', () => {
+  it('keeps every capital coordinate in range and in [lon, lat] order', () => {
     for (const c of countries) {
-      for (const [lon, lat] of [c.capitalLonLat, c.centroid]) {
-        expect(lon, `${c.code} lon`).toBeGreaterThanOrEqual(-180);
-        expect(lon, `${c.code} lon`).toBeLessThanOrEqual(180);
-        expect(lat, `${c.code} lat`).toBeGreaterThanOrEqual(-90);
-        expect(lat, `${c.code} lat`).toBeLessThanOrEqual(90);
-      }
+      const [lon, lat] = c.capitalLonLat;
+      expect(lon, `${c.code} lon`).toBeGreaterThanOrEqual(-180);
+      expect(lon, `${c.code} lon`).toBeLessThanOrEqual(180);
+      expect(lat, `${c.code} lat`).toBeGreaterThanOrEqual(-90);
+      expect(lat, `${c.code} lat`).toBeLessThanOrEqual(90);
+    }
+  });
+
+  it('carries no fields the application does not use', () => {
+    // `centroid` was removed once fitCountry started deriving its own from the
+    // capital's landmass. Regenerating the ETL must not quietly reintroduce it.
+    for (const c of countries) {
+      expect(Object.keys(c).sort()).toEqual([
+        'altCapitals',
+        'capital',
+        'capitalLonLat',
+        'code',
+        'continent',
+        'name',
+      ]);
     }
   });
 

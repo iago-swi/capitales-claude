@@ -4,8 +4,6 @@ CREATE TABLE IF NOT EXISTS countries (
   capital       TEXT NOT NULL,
   capital_lon   REAL NOT NULL,
   capital_lat   REAL NOT NULL,
-  centroid_lon  REAL NOT NULL,
-  centroid_lat  REAL NOT NULL,
   continent     TEXT NOT NULL,
   alt_capitals  TEXT NOT NULL DEFAULT '[]'
 ) STRICT;

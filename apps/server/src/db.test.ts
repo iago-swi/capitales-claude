@@ -15,7 +15,6 @@ function fixture(code: string, capital: string, alt: string[] = []): Country {
     name: `Name of ${code}`,
     capital,
     capitalLonLat: [2.3522, 48.8566],
-    centroid: [2.45, 46.6],
     continent: 'Europe',
     altCapitals: alt,
   };
@@ -102,7 +101,6 @@ describe('listCountries', () => {
     seedCountries(db, [fixture('FRA', 'Paris')]);
     const [france] = listCountries(db);
     expect(france?.capitalLonLat).toEqual([2.3522, 48.8566]);
-    expect(france?.centroid).toEqual([2.45, 46.6]);
   });
 
   it('round-trips altCapitals through JSON', () => {
