@@ -633,12 +633,25 @@ sorties de l'ETL.
 
 ## 15. Ce qui n'est pas encore fait
 
-- **`apps/mobile`** — prévu, mise en page tactile sur les mêmes composants
 - Une suite de tests de bout en bout Playwright
 - **La signature de code.** Aucune des deux versions Windows n'est signée, donc
   SmartScreen avertit au premier lancement. Signer exige un certificat payant.
 - **AppImage et `.deb`**, configurés mais nécessitant Linux, WSL ou Docker pour
   être réellement produits (§14)
+
+**`apps/mobile` a été abandonné**, pas oublié. La conception d'origine prévoyait
+une enveloppe tactile distincte comme troisième variante. Le travail de
+responsive fait pour tenir dans une fenêtre d'ordinateur portable en a absorbé
+l'essentiel : mesuré en 375×812, la mise en page se replie sur une colonne sans
+aucun débordement, les quatre réponses restent au-dessus de la ligne de
+flottaison, et les boutons font 56 px — au-dessus du plancher d'accessibilité de
+44 px. Un quatrième paquet dupliquerait aujourd'hui une mise en page qui marche
+déjà.
+
+Ce qu'une passe tactile apporterait encore, en retouches d'`apps/web` et non en
+nouvelle application : une carte plus grande (205 px sur téléphone, c'est
+étriqué), le masquage des pastilles A–D là où il n'y a pas de clavier, la
+suppression des états de survol, et la gestion des encoches.
 
 Hors périmètre volontairement : le choix d'une région ou d'une difficulté, la
 répétition espacée, et un écran de révision des erreurs.

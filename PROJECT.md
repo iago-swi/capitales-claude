@@ -577,12 +577,23 @@ the repository.
 
 ## 15. What isn't built yet
 
-- **`apps/mobile`** — planned, touch-first layout over the same components
 - A Playwright end-to-end suite
 - **Code signing.** Neither Windows build is signed, so SmartScreen warns on
   first run. Signing needs a certificate, which costs money.
 - **AppImage and `.deb`**, which are configured but need a Linux machine, WSL or
   Docker to actually build (§14)
+
+**`apps/mobile` was dropped**, not forgotten. The original design called for a
+separate touch-first shell as the third variant. The responsive work done to fit
+the app into a laptop window absorbed most of it: measured at 375×812, the
+layout folds to one column with zero overflow, all four answers stay above the
+fold, and the buttons are 56px tall — above the 44px accessibility floor. A
+fourth package would now duplicate a layout that already works.
+
+What a touch pass would still add, as refinements to `apps/web` rather than a
+new app: a taller map (205px on a phone is cramped), hiding the A–D key badges
+where there is no keyboard, dropping hover states, and safe-area insets for
+notched screens.
 
 Deliberately out of scope: region and difficulty selection, spaced repetition,
 and a review-your-mistakes screen.
