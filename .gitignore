@@ -12,3 +12,8 @@ packages/data/.cache/
 
 # electron-builder output
 release/
+
+# Note: apps/desktop/assets/icon.ico, icon.png and icons/ ARE committed.
+# They are generated from the SVGs by `npm run icons`, but committing them
+# keeps packaging free of a native rasteriser dependency — the same reasoning
+# that keeps the ETL outputs in the repository.

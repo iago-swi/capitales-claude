@@ -476,8 +476,10 @@ feature, arguably.
 ## 14. The Windows app
 
 ```bash
-npm run dev:desktop     # build and run it
-npm run package:win     # installer -> apps/desktop/release
+npm run dev:desktop      # build and run it
+npm run package:win      # Windows installer  -> apps/desktop/release
+npm run package:linux    # Linux tarball      -> apps/desktop/release
+npm run icons            # re-render icons from the SVGs
 ```
 
 `Capitales Setup 0.0.0.exe` is about 101 MB, which is Electron's floor: the
@@ -512,6 +514,37 @@ Electron rather than Tauri: Tauri would produce a ~5 MB installer instead of
 ~101 MB, but it needs the Rust toolchain and MSVC Build Tools, several GB that
 this machine does not have. The shell owns no game logic, so switching later is
 a contained change.
+
+### Linux
+
+`npm run package:linux` produces `Capitales-0.0.0-x64.tar.gz`: extract it and
+run `./capitales`. The archive carries everything, fonts included, so the Linux
+build is as offline as the Windows one.
+
+**AppImage and .deb cannot be built on Windows.** AppImage needs `mksquashfs`
+and electron-builder looks for it under a `darwin/` path when invoked from
+Windows; `.deb` needs Debian packaging tools. Both work from a Linux machine,
+WSL, or Docker — the targets are already configured, so
+`npm run package:linux:all` builds all three there. On Windows the default
+script asks only for `tar.gz`, which builds anywhere, rather than failing.
+
+The Linux executable is named `capitales` explicitly. Left to itself
+electron-builder derives it from the package name and produces
+`@capitalesdesktop`, which AppImage rejects outright.
+
+### Icons
+
+`apps/desktop/assets/icon.svg` is the survey marker — the same motif the game
+paints on every capital. There is a second drawing, `icon-small.svg`: below
+48px the graticule turns to mud and the ticks vanish, so the small sizes come
+from a simplified version with a heavier ring and a larger dot. `make-icons.mjs`
+picks the right source per size and emits `icon.ico` (7 sizes), a 512px
+`icon.png`, and a themed `icons/` directory for Linux.
+
+The rendered files are committed even though they are generated. Regenerating
+them needs `sharp`, a native rasteriser, and making every build install that for
+100 KB of PNG is a bad trade — the same reasoning that keeps the ETL outputs in
+the repository.
 
 ## 15. What isn't built yet
 

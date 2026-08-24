@@ -17,7 +17,9 @@
     "build": "npm run build -w @capitales/web",
     "build:desktop": "npm run build && npm run build -w @capitales/desktop",
     "dev:desktop": "npm run build:desktop && npm run start -w @capitales/desktop",
-    "package:win": "npm run build:desktop && npm run package -w @capitales/desktop"
+    "package:win": "npm run build:desktop && npm run package -w @capitales/desktop",
+    "package:linux": "npm run build:desktop && npm run package:linux -w @capitales/desktop",
+    "icons": "npm run icons -w @capitales/desktop"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",

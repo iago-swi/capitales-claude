@@ -8,7 +8,10 @@
   "scripts": {
     "build": "node build.mjs",
     "start": "electron .",
-    "package": "electron-builder --win --publish never"
+    "package": "electron-builder --win --publish never",
+    "icons": "node make-icons.mjs",
+    "package:linux": "electron-builder --linux tar.gz --publish never",
+    "package:linux:all": "electron-builder --linux --publish never"
   },
   "dependencies": {
     "@capitales/core": "*",
@@ -19,7 +22,8 @@
     "appId": "ch.noth.capitales",
     "productName": "Capitales",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "assets"
     },
     "files": [
       "dist/**/*",
@@ -33,19 +37,50 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "icon": "assets/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "shortcutName": "Capitales"
     },
-    "electronVersion": "43.4.1"
+    "electronVersion": "43.4.1",
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "tar.gz",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icons",
+      "category": "Education",
+      "synopsis": "World capitals quiz",
+      "description": "Identify the capital of a country from its outline and a marker."
+    },
+    "executableName": "capitales",
+    "artifactName": "${productName}-${version}-${arch}.${ext}"
   },
   "devDependencies": {
     "electron": "43.4.1",
     "esbuild": "^0.25.0",
-    "electron-builder": "^26.0.0"
+    "electron-builder": "^26.0.0",
+    "sharp": "^0.35.3",
+    "png-to-ico": "^3.0.2"
   },
   "author": "Philippe Noth"
 }

@@ -155,6 +155,7 @@ async function createWindow(): Promise<void> {
     minHeight: MIN_HEIGHT,
     // Matches --abyss so the frame does not flash white before first paint.
     backgroundColor: '#0a1628',
+    icon: path.join(__dirname, 'icon.png'),
     show: false,
     autoHideMenuBar: true,
     webPreferences: {

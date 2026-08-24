@@ -46,4 +46,8 @@ await build({
 // The renderer bundle rides along, served by the in-process host.
 await cp(WEB_DIST, path.join(OUT, 'web'), { recursive: true });
 
+// Packaged builds get the icon from the executable; an unpackaged dev run does
+// not, so the window is handed one explicitly.
+await cp(path.join(HERE, 'assets', 'icon.png'), path.join(OUT, 'icon.png'));
+
 console.log('desktop main bundled -> apps/desktop/dist/main.cjs');

@@ -39,3 +39,10 @@ See `docs/superpowers/specs/2026-08-24-capitales-quiz-design.md`.
 
 The desktop build hosts the API inside the Electron process and stores its
 database in %APPDATA%\Capitales, seeding itself on first launch.
+
+## Linux
+
+    npm run package:linux    # tarball into apps/desktop/release
+
+Extract and run ./capitales. AppImage and .deb need a Linux machine, WSL or
+Docker; see PROJECT.md section 14.
