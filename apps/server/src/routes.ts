@@ -1,5 +1,8 @@
 import { createServer as createHttpServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
+import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import type { AnswerRecord, RunInput } from '@capitales/core';
 import { countCountries, insertRun, listCountries, topRuns } from './db.js';
@@ -14,6 +17,70 @@ const MAX_NAME_LENGTH = 40;
 const MAX_BODY_BYTES = 256 * 1024;
 
 class BadRequest extends Error {}
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.ico': 'image/x-icon',
+  '.png': 'image/png',
+};
+
+export interface ServerOptions {
+  /**
+   * Directory of built web assets to serve alongside the API.
+   *
+   * Only the desktop shell sets this. In development Vite serves the app and
+   * proxies /api here, so leaving it undefined keeps the server API-only and
+   * the existing route behaviour byte-for-byte identical.
+   */
+  staticDir?: string;
+}
+
+/**
+ * Serves one file from the bundle, falling back to index.html.
+ *
+ * Returns false when there is nothing to serve, so the caller can 404 as normal.
+ */
+async function serveStatic(
+  root: string,
+  pathname: string,
+  res: ServerResponse,
+): Promise<boolean> {
+  const requested = pathname === '/' ? '/index.html' : pathname;
+
+  // Resolve inside the root and verify containment: a request for
+  // /../../etc/passwd must not escape the bundle.
+  const target = path.join(root, path.normalize(requested));
+  const withinRoot =
+    target === root || target.startsWith(root + path.sep);
+  const file = withinRoot ? target : path.join(root, 'index.html');
+
+  let chosen = file;
+  try {
+    const info = await stat(chosen);
+    if (info.isDirectory()) chosen = path.join(chosen, 'index.html');
+  } catch {
+    // Unknown path: hand back the shell so client-side routing still works.
+    chosen = path.join(root, 'index.html');
+  }
+
+  try {
+    await stat(chosen);
+  } catch {
+    return false;
+  }
+
+  res.writeHead(200, {
+    'content-type': MIME[path.extname(chosen).toLowerCase()] ?? 'application/octet-stream',
+  });
+  createReadStream(chosen).pipe(res);
+  return true;
+}
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
@@ -123,7 +190,7 @@ function parseLimit(raw: string | null): number {
  * IS the append-only guarantee from spec section 5.4, which is why the tests
  * assert it explicitly.
  */
-export function createServer(db: DatabaseSync): Server {
+export function createServer(db: DatabaseSync, options: ServerOptions = {}): Server {
   return createHttpServer((req, res) => {
     const url = new URL(req.url ?? '/', `http://${HOST}`);
     const route = `${req.method ?? 'GET'} ${url.pathname}`;
@@ -149,8 +216,15 @@ export function createServer(db: DatabaseSync): Server {
             return send(res, 201, { id: insertRun(db, run) });
           }
 
-          default:
+          default: {
+            // Static files are only ever a fallback, and only for GET, so no
+            // asset path can shadow an API route or smuggle in a write verb.
+            if (options.staticDir && req.method === 'GET') {
+              const served = await serveStatic(options.staticDir, url.pathname, res);
+              if (served) return;
+            }
             return send(res, 404, { error: `no route for ${route}` });
+          }
         }
       } catch (error) {
         if (error instanceof BadRequest) {

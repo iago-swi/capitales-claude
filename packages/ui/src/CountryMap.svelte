@@ -57,7 +57,13 @@
     width: 100%;
     height: 100%;
     display: block;
-    overflow: visible;
+    /*
+     * Clip to the viewBox. With `overflow: visible` the marker's halo painted
+     * outside the chart, which counted as overflow in the scrolling ancestor
+     * and produced a horizontal scrollbar whenever the capital sat near an
+     * edge. A slightly clipped halo is invisible; a scrollbar is not.
+     */
+    overflow: hidden;
   }
 
   .land {

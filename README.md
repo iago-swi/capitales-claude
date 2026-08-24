@@ -31,3 +31,11 @@ first.
 ## Design
 
 See `docs/superpowers/specs/2026-08-24-capitales-quiz-design.md`.
+
+## Windows app
+
+    npm run dev:desktop     # build and run
+    npm run package:win     # installer into apps/desktop/release
+
+The desktop build hosts the API inside the Electron process and stores its
+database in %APPDATA%\Capitales, seeding itself on first launch.

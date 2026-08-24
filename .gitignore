@@ -9,3 +9,6 @@ dist/
 
 # Downloaded Natural Earth sources; the ETL *outputs* are committed
 packages/data/.cache/
+
+# electron-builder output
+release/

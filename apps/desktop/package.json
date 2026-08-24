@@ -1,0 +1,51 @@
+{
+  "name": "@capitales/desktop",
+  "version": "0.0.0",
+  "productName": "Capitales",
+  "private": true,
+  "description": "Capitales — world capitals quiz",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "electron .",
+    "package": "electron-builder --win --publish never"
+  },
+  "dependencies": {
+    "@capitales/core": "*",
+    "@capitales/data": "*",
+    "@capitales/server": "*"
+  },
+  "build": {
+    "appId": "ch.noth.capitales",
+    "productName": "Capitales",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Capitales"
+    },
+    "electronVersion": "43.4.1"
+  },
+  "devDependencies": {
+    "electron": "43.4.1",
+    "esbuild": "^0.25.0",
+    "electron-builder": "^26.0.0"
+  },
+  "author": "Philippe Noth"
+}

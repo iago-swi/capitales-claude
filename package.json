@@ -14,7 +14,10 @@
     "seed": "tsx apps/server/src/seed.ts",
     "server": "tsx apps/server/src/server.ts",
     "dev": "npm run dev -w @capitales/web",
-    "build": "npm run build -w @capitales/web"
+    "build": "npm run build -w @capitales/web",
+    "build:desktop": "npm run build && npm run build -w @capitales/desktop",
+    "dev:desktop": "npm run build:desktop && npm run start -w @capitales/desktop",
+    "package:win": "npm run build:desktop && npm run package -w @capitales/desktop"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",

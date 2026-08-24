@@ -1,11 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { CountryRecord, RunInput, RunSummary } from '@capitales/core';
-
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const SCHEMA_PATH = path.join(HERE, 'schema.sql');
+import { SCHEMA } from './schema.js';
 
 interface CountryRow {
   code: string;
@@ -42,7 +37,7 @@ export function openDb(file: string): DatabaseSync {
   // an in-memory database, so skip it there.
   if (file !== ':memory:') db.exec('PRAGMA journal_mode = WAL');
 
-  db.exec(readFileSync(SCHEMA_PATH, 'utf8'));
+  db.exec(SCHEMA);
   return db;
 }
 

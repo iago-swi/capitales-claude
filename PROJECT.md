@@ -34,6 +34,8 @@ npm run dev         # the game on http://localhost:5173
 | `npm run server` | Starts the API. Needs nothing else running. |
 | `npm run dev` | Vite dev server for the web app, proxying `/api` to the server. |
 | `npm run build` | Production bundle into `apps/web/dist`. |
+| `npm run dev:desktop` | Builds and launches the Windows app. |
+| `npm run package:win` | Builds the installer into `apps/desktop/release`. |
 | `npm run build:data` | Re-runs the Natural Earth ETL. Rarely needed; outputs are committed. |
 | `npm test` | The whole suite — 160 tests, nothing to start first. |
 | `npm run typecheck` | `tsc --noEmit` across every package. |
@@ -150,8 +152,9 @@ Capitales/
 │              Scoreboard, LanguageToggle
 └─ apps/
    ├─ server/  the ONLY module that touches SQLite
-   │           schema.sql · db · routes · server · seed
-   └─ web/     Vite + Svelte 5, composes everything
+   │           schema · db · routes · host · server · seed
+   ├─ web/     Vite + Svelte 5, composes everything
+   └─ desktop/ Electron shell for Windows; hosts the server in-process
 ```
 
 The dependency direction is strictly one-way:
@@ -470,16 +473,55 @@ feature, arguably.
 
 ---
 
-## 14. What isn't built yet
+## 14. The Windows app
 
-The design covers three shells over one shared core. Only the first exists:
+```bash
+npm run dev:desktop     # build and run it
+npm run package:win     # installer -> apps/desktop/release
+```
 
-- **`apps/web`** — done, the desktop-browser layout
+`Capitales Setup 0.0.0.exe` is about 101 MB, which is Electron's floor: the
+installer carries a whole Chromium.
+
+**The server runs inside the Electron main process**, not as a spawned child.
+That is only possible because `apps/server` is a plain Node module with no
+browser dependency, and it buys three things: one process to supervise, no port
+negotiation with a child, and no orphaned server if the window is killed.
+
+That same server also serves the built web assets, so the renderer talks to a
+single origin and the client's relative `/api` paths work with no proxy and no
+CORS — exactly as they do behind Vite in development. The port is `0`, meaning
+the OS picks a free one, so the app never collides with a running dev server.
+
+Three details that would each have broken the packaged build:
+
+**The database goes in `%APPDATA%\Capitales\`**, never beside the executable.
+An installed app cannot write next to its own binary, and anything in the
+install directory is wiped by the next update — taking the high scores with it.
+
+**The app seeds itself on first launch.** There is no terminal to run
+`npm run seed` from, so `capitals.json` is bundled and planted if the countries
+table is empty.
+
+**The schema is a TypeScript string, not a `.sql` file.** The main process is
+bundled to CommonJS, where `import.meta.url` is empty, so resolving a sibling
+file at runtime returned the wrong path and crashed on startup. Inlining it
+means the schema travels with the code in every build.
+
+Electron rather than Tauri: Tauri would produce a ~5 MB installer instead of
+~101 MB, but it needs the Rust toolchain and MSVC Build Tools, several GB that
+this machine does not have. The shell owns no game logic, so switching later is
+a contained change.
+
+## 15. What isn't built yet
+
 - **`apps/mobile`** — planned, touch-first layout over the same components
-- **`apps/desktop`** — planned, an Electron window wrapping `apps/web/dist`
+- A Playwright end-to-end suite
+- A real application icon; the build currently uses Electron's default
+- Code signing, so Windows SmartScreen will warn on first run
 
-Also planned: a Playwright end-to-end suite. Deliberately out of scope: region
-and difficulty selection, spaced repetition, and a review-your-mistakes screen.
+Deliberately out of scope: region and difficulty selection, spaced repetition,
+and a review-your-mistakes screen.
 
 The full design document and the implementation plan live in
 `docs/superpowers/`.

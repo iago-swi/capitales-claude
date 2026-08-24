@@ -204,7 +204,9 @@
             {#if game.leaderboard.length === 0}
               <p class="mono">{msg('noScoresYet')}</p>
             {:else}
-              <ol>
+              <!-- Two columns past five entries: a full board would otherwise
+                   need 95px it does not have on a laptop window. -->
+              <ol class:split={game.leaderboard.length > 5}>
                 {#each game.leaderboard as row, i (row.id)}
                   <li>
                     <span class="rank mono">{String(i + 1).padStart(2, '0')}</span>
@@ -288,11 +290,12 @@
   .frame {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    min-height: 100dvh;
+    gap: clamp(0.5rem, 1.4vh, 1rem);
+    height: 100dvh;
     max-width: 82rem;
     margin: 0 auto;
-    padding: 1.4rem clamp(1rem, 4vw, 3rem) 1.2rem;
+    padding: clamp(0.7rem, 2vh, 1.4rem) clamp(1rem, 4vw, 3rem)
+      clamp(0.6rem, 1.6vh, 1.2rem);
   }
 
   .bar {
@@ -314,6 +317,14 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+    /*
+     * Vertical is a safety valve for very short windows. Horizontal is always
+     * hidden: `overflow-y: auto` alone would force overflow-x to `auto` too,
+     * so any stray pixel of lateral ink becomes a scrollbar.
+     */
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
   }
 
   .foot {
@@ -331,15 +342,16 @@
     flex-direction: column;
     align-items: center;
     text-align: center;
-    gap: 1.1rem;
-    padding: 1rem 0 2rem;
+    gap: clamp(0.5rem, 1.5vh, 1.1rem);
+    padding: clamp(0.5rem, 1.5vh, 1rem) 0 clamp(0.5rem, 2vh, 1.5rem);
   }
   .hero {
-    width: min(420px, 70vw);
-    height: 300px;
+    width: min(420px, 60vw);
+    /* Gives up height first when the window is short: the outline is
+       atmosphere, the headline and the button are the job. */
+    height: clamp(120px, 24vh, 280px);
     display: grid;
     place-items: center;
-    margin-bottom: -0.5rem;
   }
   .eyebrow {
     margin: 0;
@@ -352,7 +364,7 @@
     line-height: 0.98;
   }
   .line-a {
-    font-size: clamp(2.4rem, 6.2vw, 4.6rem);
+    font-size: clamp(1.9rem, min(6.2vw, 7.4vh), 4.2rem);
     font-weight: 700;
     letter-spacing: -0.035em;
     color: var(--paper);
@@ -361,7 +373,7 @@
     font-family: var(--serif);
     font-style: italic;
     font-weight: 400;
-    font-size: clamp(2.6rem, 6.8vw, 5.1rem);
+    font-size: clamp(2.1rem, min(6.8vw, 8.2vh), 4.6rem);
     letter-spacing: -0.01em;
     color: var(--brass);
   }
@@ -376,8 +388,8 @@
     display: inline-flex;
     align-items: center;
     gap: 1.4rem;
-    margin-top: 0.6rem;
-    padding: 0.95rem 1.7rem;
+    margin-top: clamp(0.2rem, 1vh, 0.6rem);
+    padding: clamp(0.7rem, 1.6vh, 0.95rem) 1.7rem;
     border: 0;
     border-radius: 3px;
     background: var(--brass);
@@ -431,9 +443,11 @@
   }
   .chart-holder {
     flex: 1;
+    min-width: 0;
     min-height: 0;
     display: grid;
     place-items: center;
+    overflow: hidden;
   }
   .coord {
     color: var(--sage);
@@ -477,8 +491,8 @@
     flex-direction: column;
     align-items: center;
     text-align: center;
-    gap: 0.9rem;
-    padding: 2rem 0;
+    gap: clamp(0.45rem, 1.3vh, 0.9rem);
+    padding: clamp(0.5rem, 2vh, 1.5rem) 0;
   }
   .tally {
     margin: 0;
@@ -489,7 +503,7 @@
   .tally-score {
     font-family: var(--serif);
     font-style: italic;
-    font-size: clamp(3.4rem, 9vw, 5.4rem);
+    font-size: clamp(2.6rem, min(9vw, 11vh), 5rem);
     line-height: 1;
     color: var(--brass);
   }
@@ -504,9 +518,9 @@
   .claim {
     display: flex;
     flex-direction: column;
-    gap: 0.7rem;
+    gap: clamp(0.35rem, 1vh, 0.7rem);
     align-items: center;
-    padding: 1.2rem 1.6rem;
+    padding: clamp(0.7rem, 1.8vh, 1.2rem) 1.6rem;
     border: 1px solid var(--brass-dim);
     border-radius: 4px;
     background: color-mix(in oklab, var(--brass) 8%, transparent);
@@ -515,7 +529,7 @@
     margin: 0;
     font-family: var(--serif);
     font-style: italic;
-    font-size: 1.6rem;
+    font-size: clamp(1.2rem, 2.6vh, 1.6rem);
     color: var(--brass);
   }
   .claim .mono {
@@ -540,19 +554,30 @@
   .board {
     width: min(24rem, 100%);
     text-align: left;
-    margin-top: 0.5rem;
+    margin-top: clamp(0.15rem, 0.8vh, 0.5rem);
+    transition: width 200ms ease;
+  }
+  .board:has(.split) {
+    width: min(40rem, 100%);
   }
   .board ol {
     list-style: none;
     padding: 0;
     margin: 0.5rem 0 0;
   }
+  .board ol.split {
+    display: grid;
+    grid-template-rows: repeat(5, auto);
+    grid-auto-flow: column;
+    column-gap: 2.5rem;
+  }
   .board li {
     display: grid;
     grid-template-columns: auto 1fr auto;
     gap: 0.9rem;
     align-items: baseline;
-    padding: 0.45rem 0;
+    /* Ten rows on a short laptop window: the list gives up padding first. */
+    padding: clamp(0.15rem, 0.55vh, 0.45rem) 0;
     border-bottom: 1px solid var(--grid);
   }
   .rank {

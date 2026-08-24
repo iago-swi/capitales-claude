@@ -1,3 +1,15 @@
+/**
+ * The database schema.
+ *
+ * Held as a string rather than read from a .sql file at runtime: the Electron
+ * main process is bundled to CommonJS, where `import.meta.url` is empty, so
+ * resolving a sibling file breaks in the packaged app. Inlining it means the
+ * schema travels with the code in every build, dev and packaged alike.
+ *
+ * Every statement is IF NOT EXISTS, so this is applied on every open and there
+ * is no migration tooling.
+ */
+export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS countries (
   code             TEXT PRIMARY KEY,
   name_en          TEXT NOT NULL,
@@ -33,3 +45,4 @@ CREATE TABLE IF NOT EXISTS run_answers (
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS idx_runs_score ON runs (score DESC);
+`;
