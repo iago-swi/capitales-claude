@@ -1,19 +1,32 @@
 import {
   buildRun,
   initialState,
+  LEADERBOARD_SIZE,
+  localizeAll,
   mulberry32,
+  qualifiesForLeaderboard,
   QUESTION_MS,
   reduce,
   remainingMs,
-  type Country,
+  type CountryRecord,
   type GameEvent,
   type GameState,
+  type Lang,
   type RunSummary,
 } from '@capitales/core';
 import { loadCountries, saveRun, topScores } from '@capitales/data';
 
 export const QUESTION_COUNT = 10;
 const REVEAL_MS = 1200;
+const LANG_KEY = 'capitales.lang';
+
+/** Remembered language, or the browser's if it has never been chosen here. */
+function initialLang(): Lang {
+  if (typeof window === 'undefined') return 'en';
+  const saved = window.localStorage.getItem(LANG_KEY);
+  if (saved === 'en' || saved === 'fr') return saved;
+  return navigator.language?.toLowerCase().startsWith('fr') ? 'fr' : 'en';
+}
 
 /**
  * The entire framework boundary. `packages/core` stays framework-free; this is
@@ -21,17 +34,24 @@ const REVEAL_MS = 1200;
  */
 export function createGame() {
   let state = $state<GameState>(initialState());
-  let countries = $state<Country[]>([]);
+  /** Every language at once, as the API returns it. */
+  let records = $state<CountryRecord[]>([]);
+  let lang = $state<Lang>(initialLang());
   let now = $state(Date.now());
   let leaderboard = $state<RunSummary[]>([]);
-  let playerName = $state('Player');
+  let qualifies = $state(false);
+  let boardLoaded = $state(false);
+  let playerName = $state('');
   let startedAt = new Date().toISOString();
 
   /** When the current reveal should end. Set on entering `revealing`. */
   let revealUntil = 0;
 
-  function dispatch(event: GameEvent): void {
+  /** Applies an event and returns the resulting state, so callers can branch
+   * on where the machine landed without re-reading a narrowed `state`. */
+  function dispatch(event: GameEvent): GameState {
     state = reduce(state, event);
+    return state;
   }
 
   // One interval drives both transitions the player does not trigger: a
@@ -47,7 +67,8 @@ export function createGame() {
       dispatch({ type: 'TIMEOUT', now });
       revealUntil = now + REVEAL_MS;
     } else if (state.phase === 'revealing' && now >= revealUntil) {
-      dispatch({ type: 'REVEAL_DONE', now });
+      const next = dispatch({ type: 'REVEAL_DONE', now });
+      if (next.phase === 'finished') void checkHighScore();
     }
   }, 100);
 
@@ -58,7 +79,7 @@ export function createGame() {
   async function boot(): Promise<void> {
     dispatch({ type: 'LOAD' });
     try {
-      countries = await loadCountries();
+      records = await loadCountries();
       start();
     } catch (error) {
       dispatch({
@@ -70,12 +91,36 @@ export function createGame() {
 
   function start(): void {
     const seed = Math.floor(Math.random() * 2 ** 31);
+    // Localise here, so question generation, distractors and answer matching
+    // all operate in one language and never see the multilingual record.
+    const pool = localizeAll(records, lang);
     dispatch({
       type: 'LOADED',
-      questions: buildRun(countries, QUESTION_COUNT, mulberry32(seed)),
+      questions: buildRun(pool, QUESTION_COUNT, mulberry32(seed)),
     });
     startedAt = new Date().toISOString();
+    qualifies = false;
+    boardLoaded = false;
     dispatch({ type: 'START', now: Date.now() });
+  }
+
+  /**
+   * Decides whether the finished run earned a place before offering the name
+   * field, so entering a name means something.
+   *
+   * A failure here must not cost the player their score, so an unreachable
+   * server simply leaves the board empty and the run unsaved.
+   */
+  async function checkHighScore(): Promise<void> {
+    try {
+      leaderboard = await topScores(LEADERBOARD_SIZE);
+      qualifies = qualifiesForLeaderboard(state.score, leaderboard);
+    } catch {
+      leaderboard = [];
+      qualifies = false;
+    } finally {
+      boardLoaded = true;
+    }
   }
 
   function pick(optionIndex: number): void {
@@ -89,7 +134,7 @@ export function createGame() {
     dispatch({ type: 'SUBMIT' });
     try {
       await saveRun({
-        playerName,
+        playerName: playerName.trim() || 'Anonymous',
         score: state.score,
         correctCount: state.correctCount,
         bestStreak: state.bestStreak,
@@ -97,7 +142,8 @@ export function createGame() {
         startedAt,
         answers: state.answers,
       });
-      leaderboard = await topScores(10);
+      leaderboard = await topScores(LEADERBOARD_SIZE);
+      qualifies = false;
       dispatch({ type: 'SUBMIT_OK' });
     } catch (error) {
       dispatch({
@@ -112,9 +158,31 @@ export function createGame() {
     start();
   }
 
+  /**
+   * Switches language and starts a fresh run.
+   *
+   * Restarting is deliberate rather than lazy: swapping the labels mid-question
+   * would change the four options under the player's cursor, and a run scored
+   * half in one language and half in another is not one run.
+   */
+  function setLang(next: Lang): void {
+    if (next === lang) return;
+    lang = next;
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(LANG_KEY, next);
+    }
+    if (records.length > 0) {
+      dispatch({ type: 'RESTART' });
+      start();
+    }
+  }
+
   return {
     get state() {
       return state;
+    },
+    get lang() {
+      return lang;
     },
     get remaining() {
       return remainingMs(state, now);
@@ -124,6 +192,12 @@ export function createGame() {
     },
     get leaderboard() {
       return leaderboard;
+    },
+    get qualifies() {
+      return qualifies;
+    },
+    get boardLoaded() {
+      return boardLoaded;
     },
     get playerName() {
       return playerName;
@@ -135,5 +209,6 @@ export function createGame() {
     pick,
     submit,
     restart,
+    setLang,
   };
 }

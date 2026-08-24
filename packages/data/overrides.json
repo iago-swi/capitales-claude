@@ -3,17 +3,24 @@
   "canonicalCapital": {
     "ZAF": {
       "capital": "Pretoria",
-      "altCapitals": ["Cape Town", "Bloemfontein"],
+      "altCapitals": [
+        "Cape Town",
+        "Bloemfontein"
+      ],
       "why": "NE lists four Admin-0 capitals for ZAF including Johannesburg, which is not a capital at all."
     },
     "BOL": {
       "capital": "Sucre",
-      "altCapitals": ["La Paz"],
+      "altCapitals": [
+        "La Paz"
+      ],
       "why": "Sucre is constitutional, La Paz is the seat of government."
     },
     "CIV": {
       "capital": "Yamoussoukro",
-      "altCapitals": ["Abidjan"],
+      "altCapitals": [
+        "Abidjan"
+      ],
       "why": "Yamoussoukro is official, Abidjan is the economic capital."
     },
     "MMR": {
@@ -25,13 +32,21 @@
   "injectCapital": {
     "SDS": {
       "capital": "Juba",
-      "lonLat": [31.5825, 4.8517],
-      "why": "South Sudan has no Admin-0 capital point in the 50m dataset."
+      "lonLat": [
+        31.5825,
+        4.8517
+      ],
+      "why": "South Sudan has no Admin-0 capital point in the 50m dataset.",
+      "capitalFr": "Djouba"
     },
     "NRU": {
       "capital": "Yaren",
-      "lonLat": [166.9209, -0.5477],
-      "why": "Nauru has no Admin-0 capital point in the 50m dataset."
+      "lonLat": [
+        166.9209,
+        -0.5477
+      ],
+      "why": "Nauru has no Admin-0 capital point in the 50m dataset.",
+      "capitalFr": "Yaren"
     }
   },
   "exclude": {

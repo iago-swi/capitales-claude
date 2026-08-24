@@ -1,21 +1,21 @@
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Country, RunInput } from '@capitales/core';
+import type { CountryRecord, RunInput } from '@capitales/core';
 import { openDb, seedCountries } from './db.js';
 import { createServer } from './routes.js';
 
 let server: Server;
 let base: string;
 
-function fixture(code: string, capital: string): Country {
+function fixture(code: string, capital: string): CountryRecord {
   return {
     code,
-    name: `Name of ${code}`,
-    capital,
+    name: { en: `Name of ${code}`, fr: `Nom de ${code}` },
+    capital: { en: capital, fr: `${capital} (fr)` },
+    altCapitals: { en: [], fr: [] },
     capitalLonLat: [2.3522, 48.8566],
     continent: 'Europe',
-    altCapitals: [],
   };
 }
 
@@ -80,13 +80,13 @@ describe('GET /api/countries', () => {
     const res = await fetch(`${base}/api/countries`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toMatch(/application\/json/);
-    const body = (await res.json()) as Country[];
+    const body = (await res.json()) as CountryRecord[];
     expect(body).toHaveLength(2);
     expect(body[0]?.code).toBe('DEU');
   });
 
   it('preserves [lon, lat] order across the wire', async () => {
-    const body = (await (await fetch(`${base}/api/countries`)).json()) as Country[];
+    const body = (await (await fetch(`${base}/api/countries`)).json()) as CountryRecord[];
     expect(body[0]?.capitalLonLat).toEqual([2.3522, 48.8566]);
   });
 });

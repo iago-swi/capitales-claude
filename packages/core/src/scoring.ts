@@ -40,3 +40,31 @@ export function scoreAnswer(
   const speedBonus = (MAX_SPEED_BONUS * remaining) / totalMs;
   return Math.round((BASE_POINTS + speedBonus) * multiplierFor(streak));
 }
+
+/** How many entries the leaderboard keeps. */
+export const LEADERBOARD_SIZE = 10;
+
+/**
+ * Whether a finished run earns a place on the leaderboard.
+ *
+ * The board is only asked for a name when this returns true, which is what
+ * makes entering one feel earned rather than clerical.
+ *
+ * Ties do NOT qualify once the board is full: replaying the same score would
+ * otherwise churn the bottom entry forever without ever being an improvement.
+ * A zero score never qualifies, however empty the board.
+ */
+export function qualifiesForLeaderboard(
+  score: number,
+  board: readonly { score: number }[],
+  size: number = LEADERBOARD_SIZE,
+): boolean {
+  if (score <= 0) return false;
+
+  // Never trust the caller's ordering; the bar is the lowest score still kept.
+  const kept = [...board].sort((a, b) => b.score - a.score).slice(0, size);
+  if (kept.length < size) return true;
+
+  const lowest = kept[kept.length - 1];
+  return lowest === undefined || score > lowest.score;
+}

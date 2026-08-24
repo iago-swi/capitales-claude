@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Topology } from 'topojson-specification';
-import type { Country } from '@capitales/core';
+import type { CountryRecord } from '@capitales/core';
 import topo from '../../data/countries.topo.json' with { type: 'json' };
 import capitals from '../../data/capitals.json' with { type: 'json' };
 import { geoBounds } from 'd3-geo';
@@ -9,10 +9,10 @@ import { capitalCluster, fitCountry, offsetFromOutlineKm } from './project.js';
 import type { CountryFeature } from './atlas.js';
 
 const atlas = buildAtlas(topo as unknown as Topology);
-const countries = capitals as Country[];
+const countries = capitals as CountryRecord[];
 const box = { width: 600, height: 400 };
 
-function get(code: string): Country {
+function get(code: string): CountryRecord {
   const c = countries.find((x) => x.code === code);
   if (!c) throw new Error(`missing test fixture ${code}`);
   return c;
@@ -79,7 +79,7 @@ describe('capitalCluster', () => {
       const f = atlas.get(c.code);
       if (!f) continue;
       const km = offsetFromOutlineKm(capitalCluster(f, c.capitalLonLat), c.capitalLonLat);
-      if (km > 5) failures.push(`${c.code} ${c.capital} is ${km.toFixed(1)} km from its cluster`);
+      if (km > 5) failures.push(`${c.code} ${c.capital.en} is ${km.toFixed(1)} km from its cluster`);
     }
     expect(failures).toEqual([]);
   });
@@ -150,7 +150,7 @@ describe('fitCountry', () => {
         dotXY[1] >= 0 &&
         dotXY[1] <= box.height;
       if (!visible) {
-        failures.push(`${c.code} (${c.capital}) at ${dotXY.map(Math.round).join(',')}`);
+        failures.push(`${c.code} (${c.capital.en}) at ${dotXY.map(Math.round).join(',')}`);
       }
     }
     expect(failures).toEqual([]);
@@ -172,7 +172,7 @@ describe('fitCountry', () => {
         dotXY[0] <= x1 + 1 &&
         dotXY[1] >= y0 - 1 &&
         dotXY[1] <= y1 + 1;
-      if (!inside) failures.push(`${c.code} (${c.capital})`);
+      if (!inside) failures.push(`${c.code} (${c.capital.en})`);
     }
     expect(failures).toEqual([]);
   });

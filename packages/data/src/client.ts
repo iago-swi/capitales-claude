@@ -1,4 +1,4 @@
-import type { Country, RunInput, RunSummary } from '@capitales/core';
+import type { CountryRecord, RunInput, RunSummary } from '@capitales/core';
 
 /**
  * Relative, so the browser talks to its own origin and Vite's proxy forwards
@@ -83,11 +83,11 @@ export async function probeApi(
  * Loads every country, after checking the two failures that would otherwise
  * present as a blank screen: no server, and an unseeded database.
  */
-export async function loadCountries(): Promise<Country[]> {
+export async function loadCountries(): Promise<CountryRecord[]> {
   const { reachable, countries } = await probeApi();
   if (!reachable) throw new ApiUnreachableError();
   if (countries === 0) throw new DatabaseEmptyError();
-  return request<Country[]>('/countries');
+  return request<CountryRecord[]>('/countries');
 }
 
 export async function saveRun(run: RunInput): Promise<number> {

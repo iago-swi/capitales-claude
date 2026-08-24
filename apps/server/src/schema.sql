@@ -1,11 +1,14 @@
 CREATE TABLE IF NOT EXISTS countries (
-  code          TEXT PRIMARY KEY,
-  name          TEXT NOT NULL,
-  capital       TEXT NOT NULL,
-  capital_lon   REAL NOT NULL,
-  capital_lat   REAL NOT NULL,
-  continent     TEXT NOT NULL,
-  alt_capitals  TEXT NOT NULL DEFAULT '[]'
+  code             TEXT PRIMARY KEY,
+  name_en          TEXT NOT NULL,
+  name_fr          TEXT NOT NULL,
+  capital_en       TEXT NOT NULL,
+  capital_fr       TEXT NOT NULL,
+  capital_lon      REAL NOT NULL,
+  capital_lat      REAL NOT NULL,
+  continent        TEXT NOT NULL,
+  alt_capitals_en  TEXT NOT NULL DEFAULT '[]',
+  alt_capitals_fr  TEXT NOT NULL DEFAULT '[]'
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS runs (

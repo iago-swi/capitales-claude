@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { Country } from '@capitales/core';
+import type { CountryRecord, Lang } from '@capitales/core';
 import capitals from '../capitals.json' with { type: 'json' };
 import topo from '../countries.topo.json' with { type: 'json' };
 
-const countries = capitals as Country[];
+const countries = capitals as CountryRecord[];
+const LANGS: Lang[] = ['en', 'fr'];
 
 describe('capitals.json', () => {
   it('contains the expected number of countries', () => {
@@ -21,11 +22,33 @@ describe('capitals.json', () => {
     expect(codes).toEqual([...codes].sort((a, b) => a.localeCompare(b)));
   });
 
-  it('gives every country a non-empty name and capital', () => {
+  it('gives every country a non-empty name and capital in every language', () => {
     for (const c of countries) {
-      expect(c.name.length, c.code).toBeGreaterThan(0);
-      expect(c.capital.length, c.code).toBeGreaterThan(0);
+      for (const lang of LANGS) {
+        expect(c.name[lang].length, `${c.code} name.${lang}`).toBeGreaterThan(0);
+        expect(c.capital[lang].length, `${c.code} capital.${lang}`).toBeGreaterThan(0);
+      }
     }
+  });
+
+  it('gives every country the same number of alternates in each language', () => {
+    for (const c of countries) {
+      expect(c.altCapitals.fr.length, c.code).toBe(c.altCapitals.en.length);
+    }
+  });
+
+  it('translates the capitals that genuinely differ in French', () => {
+    const byCode = new Map(countries.map((c) => [c.code, c]));
+    expect(byCode.get('BEL')?.capital.fr).toBe('Bruxelles');
+    expect(byCode.get('CHN')?.capital.fr).toBe('Pékin');
+    expect(byCode.get('SDS')?.capital.fr).toBe('Djouba');
+    expect(byCode.get('DEU')?.name.fr).toBe('Allemagne');
+  });
+
+  it('resolves French alternates from the dataset, not by copying English', () => {
+    const zaf = countries.find((c) => c.code === 'ZAF');
+    expect(zaf?.altCapitals.en).toContain('Cape Town');
+    expect(zaf?.altCapitals.fr).toContain('Le Cap');
   });
 
   it('keeps every capital coordinate in range and in [lon, lat] order', () => {
@@ -50,12 +73,17 @@ describe('capitals.json', () => {
         'continent',
         'name',
       ]);
+      expect(Object.keys(c.name).sort()).toEqual(['en', 'fr']);
+      expect(Object.keys(c.capital).sort()).toEqual(['en', 'fr']);
+      expect(Object.keys(c.altCapitals).sort()).toEqual(['en', 'fr']);
     }
   });
 
   it('never lists the canonical capital among its own alternates', () => {
     for (const c of countries) {
-      expect(c.altCapitals, c.code).not.toContain(c.capital);
+      for (const lang of LANGS) {
+        expect(c.altCapitals[lang], `${c.code} ${lang}`).not.toContain(c.capital[lang]);
+      }
     }
   });
 
@@ -64,19 +92,19 @@ describe('capitals.json', () => {
     for (const code of ['FRA', 'NOR']) {
       expect(countries.find((c) => c.code === code), code).toBeDefined();
     }
-    expect(countries.find((c) => c.code === 'FRA')?.capital).toBe('Paris');
+    expect(countries.find((c) => c.code === 'FRA')?.capital.en).toBe('Paris');
   });
 
   it('applies the hand-curated overrides', () => {
     const zaf = countries.find((c) => c.code === 'ZAF');
-    expect(zaf?.capital).toBe('Pretoria');
-    expect(zaf?.altCapitals).toContain('Cape Town');
+    expect(zaf?.capital.en).toBe('Pretoria');
+    expect(zaf?.altCapitals.en).toContain('Cape Town');
     // Johannesburg is mis-tagged as an Admin-0 capital and must not appear.
-    expect(zaf?.altCapitals).not.toContain('Johannesburg');
+    expect(zaf?.altCapitals.en).not.toContain('Johannesburg');
 
-    expect(countries.find((c) => c.code === 'BOL')?.capital).toBe('Sucre');
-    expect(countries.find((c) => c.code === 'SDS')?.capital).toBe('Juba');
-    expect(countries.find((c) => c.code === 'NRU')?.capital).toBe('Yaren');
+    expect(countries.find((c) => c.code === 'BOL')?.capital.en).toBe('Sucre');
+    expect(countries.find((c) => c.code === 'SDS')?.capital.en).toBe('Juba');
+    expect(countries.find((c) => c.code === 'NRU')?.capital.en).toBe('Yaren');
   });
 
   it('excludes dependencies and disputed entities', () => {

@@ -5,7 +5,7 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Country } from '@capitales/core';
+import type { CountryRecord } from '@capitales/core';
 import { countCountries, openDb, seedCountries } from './db.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -15,7 +15,7 @@ const CAPITALS = path.join(ROOT, 'packages', 'data', 'capitals.json');
 
 mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
-const countries = JSON.parse(readFileSync(CAPITALS, 'utf8')) as Country[];
+const countries = JSON.parse(readFileSync(CAPITALS, 'utf8')) as CountryRecord[];
 const db = openDb(DB_PATH);
 const written = seedCountries(db, countries);
 

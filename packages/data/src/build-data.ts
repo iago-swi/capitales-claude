@@ -12,7 +12,7 @@ import { topology } from 'topojson-server';
 import { quantize } from 'topojson-client';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import type { Objects, Topology } from 'topojson-specification';
-import type { Country, LonLat } from '@capitales/core';
+import type { CountryRecord, LonLat } from '@capitales/core';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(HERE, '..');
@@ -43,8 +43,18 @@ const SOVEREIGN_TYPES = new Set(['Country', 'Sovereign country']);
 
 interface Overrides {
   canonicalCapital: Record<string, { capital: string; altCapitals: string[] }>;
-  injectCapital: Record<string, { capital: string; lonLat: LonLat }>;
+  injectCapital: Record<
+    string,
+    { capital: string; capitalFr: string; lonLat: LonLat }
+  >;
   exclude: Record<string, string>;
+}
+
+/** One Admin-0 capital point, with the names Natural Earth carries for it. */
+interface CapitalPoint {
+  name: string;
+  nameFr: string;
+  lonLat: LonLat;
 }
 
 /** Downloads once, then reads from .cache. The cache is gitignored. */
@@ -60,18 +70,23 @@ async function fetchCached(file: string): Promise<FeatureCollection> {
   return JSON.parse(await readFile(dest, 'utf8')) as FeatureCollection;
 }
 
-function capitalPoints(
-  places: FeatureCollection,
-): Map<string, { name: string; lonLat: LonLat }[]> {
-  const byCode = new Map<string, { name: string; lonLat: LonLat }[]>();
+function capitalPoints(places: FeatureCollection): Map<string, CapitalPoint[]> {
+  const byCode = new Map<string, CapitalPoint[]>();
   for (const f of places.features) {
     const p = f.properties ?? {};
     if (p['FEATURECLA'] !== 'Admin-0 capital') continue;
     if (f.geometry?.type !== 'Point') continue;
     const code = String(p['ADM0_A3']);
     const [lon, lat] = f.geometry.coordinates as [number, number];
+    const name = String(p['NAME']);
     const list = byCode.get(code) ?? [];
-    list.push({ name: String(p['NAME']), lonLat: [lon, lat] });
+    // NAME_FR is populated for every Admin-0 capital in the 50m dataset, but
+    // fall back rather than emit "undefined" if that ever stops being true.
+    list.push({
+      name,
+      nameFr: p['NAME_FR'] ? String(p['NAME_FR']) : name,
+      lonLat: [lon, lat],
+    });
     byCode.set(code, list);
   }
   return byCode;
@@ -87,7 +102,7 @@ async function main(): Promise<void> {
   ) as Overrides;
 
   const caps = capitalPoints(placesFc);
-  const countries: Country[] = [];
+  const countries: CountryRecord[] = [];
   const keptFeatures: Feature<Geometry>[] = [];
   const skippedDependencies: string[] = [];
 
@@ -101,13 +116,16 @@ async function main(): Promise<void> {
 
     const found = caps.get(code) ?? [];
     let capital: string;
+    let capitalFr: string;
     let capitalLonLat: LonLat;
     let altCapitals: string[] = [];
+    let altCapitalsFr: string[] = [];
 
     if (found.length === 0) {
       const injected = overrides.injectCapital[code];
       if (injected) {
         capital = injected.capital;
+        capitalFr = injected.capitalFr;
         capitalLonLat = injected.lonLat;
       } else if (type === 'Sovereign country') {
         // A real country is about to vanish silently. Refuse.
@@ -121,8 +139,9 @@ async function main(): Promise<void> {
         continue;
       }
     } else if (found.length === 1) {
-      const only = found[0] as { name: string; lonLat: LonLat };
+      const only = found[0] as CapitalPoint;
       capital = only.name;
+      capitalFr = only.nameFr;
       capitalLonLat = only.lonLat;
     } else {
       const chosen = overrides.canonicalCapital[code];
@@ -141,17 +160,33 @@ async function main(): Promise<void> {
         );
       }
       capital = match.name;
+      capitalFr = match.nameFr;
       capitalLonLat = match.lonLat;
       altCapitals = chosen.altCapitals;
+
+      // Resolve each alternate's French name from the same dataset rather than
+      // duplicating translations into overrides.json. Fails loudly if an
+      // override names a city the dataset does not list for this country.
+      altCapitalsFr = chosen.altCapitals.map((alt) => {
+        const point = found.find((c) => c.name === alt);
+        if (!point) {
+          throw new Error(
+            `${code}: overrides.json lists "${alt}" as an alternate capital, ` +
+              `but the dataset only has ${found.map((c) => c.name).join(', ')}.`,
+          );
+        }
+        return point.nameFr;
+      });
     }
 
+    const nameEn = String(p['NAME']);
     countries.push({
       code,
-      name: String(p['NAME']),
-      capital,
+      name: { en: nameEn, fr: p['NAME_FR'] ? String(p['NAME_FR']) : nameEn },
+      capital: { en: capital, fr: capitalFr },
+      altCapitals: { en: altCapitals, fr: altCapitalsFr },
       capitalLonLat,
       continent: String(p['CONTINENT']),
-      altCapitals,
     });
     keptFeatures.push({
       type: 'Feature',

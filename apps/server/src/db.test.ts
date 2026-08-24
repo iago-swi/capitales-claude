@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Country, RunInput } from '@capitales/core';
+import type { CountryRecord, RunInput } from '@capitales/core';
 import {
   countCountries,
   insertRun,
@@ -9,14 +9,14 @@ import {
   topRuns,
 } from './db.js';
 
-function fixture(code: string, capital: string, alt: string[] = []): Country {
+function fixture(code: string, capital: string, alt: string[] = []): CountryRecord {
   return {
     code,
-    name: `Name of ${code}`,
-    capital,
+    name: { en: `Name of ${code}`, fr: `Nom de ${code}` },
+    capital: { en: capital, fr: `${capital} (fr)` },
+    altCapitals: { en: alt, fr: alt.map((a) => `${a} (fr)`) },
     capitalLonLat: [2.3522, 48.8566],
     continent: 'Europe',
-    altCapitals: alt,
   };
 }
 
@@ -87,7 +87,7 @@ describe('seedCountries', () => {
     const db = fresh();
     seedCountries(db, [fixture('BOL', 'La Paz')]);
     seedCountries(db, [fixture('BOL', 'Sucre')]);
-    expect(listCountries(db)[0]?.capital).toBe('Sucre');
+    expect(listCountries(db)[0]?.capital.en).toBe('Sucre');
   });
 
   it('starts from zero on an empty database', () => {
@@ -108,16 +108,20 @@ describe('listCountries', () => {
     seedCountries(db, [
       fixture('ZAF', 'Pretoria', ['Cape Town', 'Bloemfontein']),
     ]);
-    expect(listCountries(db)[0]?.altCapitals).toEqual([
+    expect(listCountries(db)[0]?.altCapitals.en).toEqual([
       'Cape Town',
       'Bloemfontein',
+    ]);
+    expect(listCountries(db)[0]?.altCapitals.fr).toEqual([
+      'Cape Town (fr)',
+      'Bloemfontein (fr)',
     ]);
   });
 
   it('defaults altCapitals to an empty array', () => {
     const db = fresh();
     seedCountries(db, [fixture('FRA', 'Paris')]);
-    expect(listCountries(db)[0]?.altCapitals).toEqual([]);
+    expect(listCountries(db)[0]?.altCapitals.en).toEqual([]);
   });
 
   it('returns rows sorted by code', () => {

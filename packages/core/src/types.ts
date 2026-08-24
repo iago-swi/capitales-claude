@@ -1,6 +1,32 @@
 /** A point in GeoJSON order: [longitude, latitude]. Never [lat, lon]. */
 export type LonLat = [number, number];
 
+/** The languages the game is playable in. */
+export type Lang = 'en' | 'fr';
+
+export const LANGS: readonly Lang[] = ['en', 'fr'];
+
+/** A value that exists in every supported language. */
+export type Localized<T> = Record<Lang, T>;
+
+/**
+ * A country as the API stores and returns it: every language at once.
+ *
+ * The game never consumes this directly. `localize()` collapses it to a
+ * `Country` in one chosen language, which is what question generation and the
+ * reducer work with. Keeping the split here means switching language is a
+ * re-map of data already in memory, not a round trip.
+ */
+export interface CountryRecord {
+  code: string;
+  name: Localized<string>;
+  capital: Localized<string>;
+  altCapitals: Localized<string[]>;
+  capitalLonLat: LonLat;
+  continent: string;
+}
+
+/** One country, in one language. The shape the game logic sees. */
 export interface Country {
   /** Natural Earth ADM0_A3. Also the countries table primary key. */
   code: string;
