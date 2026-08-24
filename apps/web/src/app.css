@@ -1,15 +1,81 @@
 @import 'tailwindcss';
 
+/* Self-hosted, because the game must work with no network. */
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-sans/700.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/instrument-serif/400-italic.css';
+
+/*
+ * Palette: a survey chart read at night. Navy ground, pale sage landmass,
+ * one brass accent reserved exclusively for the capital marker and the single
+ * primary action — never for decoration.
+ */
 :root {
-  color-scheme: light dark;
-  --ink: light-dark(#1a1a1a, #ececec);
-  --paper: light-dark(#fbfbf9, #16181c);
+  --abyss: #0a1628;
+  --abyss-deep: #06101d;
+  --shelf: #122744;
+  --grid: #1b3557;
+  --brass: #e8b54b;
+  --brass-dim: #8a6b2c;
+  --sage: #c4d6c9;
+  --paper: #e9f0f7;
+  --dim: #89a2be;
+  --signal: #63c68a;
+  --warn: #f0913c;
+  --alarm: #e8705f;
+
+  --sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Code', monospace;
+  --serif: 'Instrument Serif', ui-serif, Georgia, serif;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
   min-height: 100dvh;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  background:
+    radial-gradient(
+      120% 90% at 50% 0%,
+      #163050 0%,
+      var(--abyss) 45%,
+      var(--abyss-deep) 100%
+    );
+  color: var(--paper);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Technical labels: coordinates, counters, section eyebrows. */
+.mono {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+button:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

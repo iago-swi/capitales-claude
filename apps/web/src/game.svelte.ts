@@ -42,6 +42,7 @@ export function createGame() {
   let qualifies = $state(false);
   let boardLoaded = $state(false);
   let playerName = $state('');
+  let ambientIndex = $state(Math.floor(Math.random() * 1000));
   let startedAt = new Date().toISOString();
 
   /** When the current reveal should end. Set on entering `revealing`. */
@@ -80,7 +81,10 @@ export function createGame() {
     dispatch({ type: 'LOAD' });
     try {
       records = await loadCountries();
-      start();
+      // Deal a run but do NOT start the clock: the machine rests in `ready`,
+      // which is the title screen. Nothing is timed until the player says so.
+      deal();
+      void refreshBoard();
     } catch (error) {
       dispatch({
         type: 'FAIL',
@@ -89,7 +93,8 @@ export function createGame() {
     }
   }
 
-  function start(): void {
+  /** Prepares a run and rests on the title screen. */
+  function deal(): void {
     const seed = Math.floor(Math.random() * 2 ** 31);
     // Localise here, so question generation, distractors and answer matching
     // all operate in one language and never see the multilingual record.
@@ -98,10 +103,23 @@ export function createGame() {
       type: 'LOADED',
       questions: buildRun(pool, QUESTION_COUNT, mulberry32(seed)),
     });
-    startedAt = new Date().toISOString();
     qualifies = false;
     boardLoaded = false;
+  }
+
+  /** Starts the clock on the dealt run. */
+  function startRun(): void {
+    startedAt = new Date().toISOString();
     dispatch({ type: 'START', now: Date.now() });
+  }
+
+  /** Loads the board so the title screen can show a best score. */
+  async function refreshBoard(): Promise<void> {
+    try {
+      leaderboard = await topScores(LEADERBOARD_SIZE);
+    } catch {
+      leaderboard = [];
+    }
   }
 
   /**
@@ -153,9 +171,11 @@ export function createGame() {
     }
   }
 
+  /** Back to the title screen with a fresh run dealt. */
   function restart(): void {
     dispatch({ type: 'RESTART' });
-    start();
+    deal();
+    void refreshBoard();
   }
 
   /**
@@ -173,7 +193,7 @@ export function createGame() {
     }
     if (records.length > 0) {
       dispatch({ type: 'RESTART' });
-      start();
+      deal();
     }
   }
 
@@ -199,6 +219,21 @@ export function createGame() {
     get boardLoaded() {
       return boardLoaded;
     },
+    get countryCount() {
+      return records.length;
+    },
+    /** Highest score on record, or null before anyone has filed one. */
+    get bestScore() {
+      return leaderboard[0] ?? null;
+    },
+    /** A country to show behind the title screen, reshuffled on each visit. */
+    get ambient() {
+      if (records.length === 0) return null;
+      return records[ambientIndex % records.length] ?? null;
+    },
+    nextAmbient() {
+      ambientIndex += 1;
+    },
     get playerName() {
       return playerName;
     },
@@ -206,6 +241,7 @@ export function createGame() {
       playerName = v;
     },
     boot,
+    startRun,
     pick,
     submit,
     restart,

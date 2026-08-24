@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { LANG_FLAG, LANG_NAME, LANGS, type Lang } from '@capitales/core';
+  import { LANG_NAME, LANGS, type Lang } from '@capitales/core';
 
   interface Props {
     lang: Lang;
@@ -8,6 +8,11 @@
   let { lang, onchange }: Props = $props();
 </script>
 
+<!--
+  Language codes, not flag emoji. Windows renders regional-indicator pairs as
+  bare letters ("GB", "FR") rather than flags, so the emoji would only ever be
+  a worse version of the code it falls back to.
+-->
 <div class="langs" role="group" aria-label="Language">
   {#each LANGS as code (code)}
     <button
@@ -18,9 +23,8 @@
       title={LANG_NAME[code]}
       onclick={() => onchange(code)}
     >
-      <span class="flag" aria-hidden="true">{LANG_FLAG[code]}</span>
       <span class="sr-only">{LANG_NAME[code]}</span>
-      <span class="code">{code.toUpperCase()}</span>
+      <span aria-hidden="true">{code.toUpperCase()}</span>
     </button>
   {/each}
 </div>
@@ -28,50 +32,40 @@
 <style>
   .langs {
     display: inline-flex;
-    gap: 0.25rem;
-    padding: 0.15rem;
-    border-radius: 999px;
-    background: color-mix(in oklab, currentColor 8%, transparent);
+    border: 1px solid var(--grid);
+    border-radius: 3px;
+    overflow: hidden;
   }
   .lang {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    min-height: 32px;
-    padding: 0.2rem 0.6rem;
+    padding: 0.35rem 0.65rem;
     border: 0;
-    border-radius: 999px;
     background: transparent;
-    color: inherit;
-    font: inherit;
-    font-size: 0.85rem;
+    color: var(--dim);
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
     line-height: 1;
     cursor: pointer;
-    opacity: 0.55;
+    transition:
+      color 140ms ease,
+      background 140ms ease;
+  }
+  .lang + .lang {
+    border-left: 1px solid var(--grid);
   }
   .lang:hover {
-    opacity: 0.85;
+    color: var(--paper);
   }
   .lang.active {
-    opacity: 1;
-    background: color-mix(in oklab, currentColor 14%, transparent);
-    font-weight: 600;
-  }
-  .flag {
-    font-size: 1.05rem;
-  }
-  /* Emoji flags do not render on Windows, so the code carries the meaning. */
-  .code {
-    letter-spacing: 0.04em;
+    background: var(--brass);
+    color: var(--abyss);
+    font-weight: 500;
   }
   .sr-only {
     position: absolute;
     width: 1px;
     height: 1px;
-    padding: 0;
-    margin: -1px;
     overflow: hidden;
     clip-path: inset(50%);
-    white-space: nowrap;
   }
 </style>

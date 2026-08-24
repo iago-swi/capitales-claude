@@ -6,6 +6,10 @@
     onpick: (index: number) => void;
   }
   let { label, index, state, onpick }: Props = $props();
+
+  // The letter is not decoration: it is the key you can press.
+  const KEYS = ['A', 'B', 'C', 'D'];
+  let key = $derived(KEYS[index] ?? String(index + 1));
 </script>
 
 <button
@@ -14,54 +18,99 @@
   disabled={state !== 'idle'}
   onclick={() => onpick(index)}
 >
-  <kbd>{index + 1}</kbd>
-  <span>{label}</span>
+  <kbd>{key}</kbd>
+  <span class="label">{label}</span>
+  <span class="verdict" aria-hidden="true">
+    {#if state === 'correct'}✓{:else if state === 'wrong'}✕{/if}
+  </span>
 </button>
 
 <style>
   .answer {
-    display: flex;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.9rem;
     width: 100%;
-    /* The accessibility floor for a tap target. It lives here rather than in
-       the web app so the mobile shell inherits it unchanged. */
-    min-height: 44px;
-    padding: 0.75rem 1rem;
-    border: 1px solid color-mix(in oklab, currentColor 25%, transparent);
-    border-radius: 0.5rem;
-    background: transparent;
-    color: inherit;
+    min-height: 56px;
+    padding: 0.7rem 1rem;
+    border: 1px solid var(--grid);
+    border-radius: 4px;
+    background: color-mix(in oklab, var(--shelf) 55%, transparent);
+    color: var(--paper);
     font: inherit;
+    font-size: 1.05rem;
     text-align: left;
     cursor: pointer;
-    transition: background 120ms ease, border-color 120ms ease;
+    transition:
+      border-color 140ms ease,
+      background 140ms ease,
+      transform 140ms ease;
   }
+
   .answer:hover:not(:disabled) {
-    background: color-mix(in oklab, currentColor 8%, transparent);
+    border-color: var(--brass);
+    background: color-mix(in oklab, var(--shelf) 90%, transparent);
+    transform: translateX(3px);
   }
+
   .answer:disabled {
     cursor: default;
   }
-  .answer.correct {
-    border-color: seagreen;
-    background: color-mix(in oklab, seagreen 20%, transparent);
-  }
-  .answer.wrong {
-    border-color: tomato;
-    background: color-mix(in oklab, tomato 20%, transparent);
-  }
-  .answer.muted {
-    opacity: 0.45;
-  }
+
   kbd {
-    flex: none;
     display: grid;
     place-items: center;
-    width: 1.6em;
-    height: 1.6em;
-    border-radius: 0.3em;
-    background: color-mix(in oklab, currentColor 15%, transparent);
-    font-size: 0.8em;
+    width: 1.9em;
+    height: 1.9em;
+    border: 1px solid var(--grid);
+    border-radius: 3px;
+    background: var(--abyss);
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--dim);
+    transition: all 140ms ease;
+  }
+  .answer:hover:not(:disabled) kbd {
+    color: var(--brass);
+    border-color: var(--brass-dim);
+  }
+
+  .label {
+    min-width: 0;
+    overflow-wrap: break-word;
+  }
+
+  .verdict {
+    font-family: var(--mono);
+    font-size: 1rem;
+  }
+
+  .answer.correct {
+    border-color: var(--signal);
+    background: color-mix(in oklab, var(--signal) 16%, transparent);
+  }
+  .answer.correct kbd {
+    color: var(--signal);
+    border-color: var(--signal);
+  }
+  .answer.correct .verdict {
+    color: var(--signal);
+  }
+
+  .answer.wrong {
+    border-color: var(--alarm);
+    background: color-mix(in oklab, var(--alarm) 16%, transparent);
+  }
+  .answer.wrong kbd {
+    color: var(--alarm);
+    border-color: var(--alarm);
+  }
+  .answer.wrong .verdict {
+    color: var(--alarm);
+  }
+
+  .answer.muted {
+    opacity: 0.35;
   }
 </style>

@@ -2,32 +2,36 @@
   interface Props {
     score: number;
     streak: number;
-    questionNumber: number;
-    questionCount: number;
+    label: string;
   }
-  let { score, streak, questionNumber, questionCount }: Props = $props();
+  let { score, streak, label }: Props = $props();
 </script>
 
-<div class="scoreboard">
-  <span class="progress">{questionNumber} / {questionCount}</span>
-  <span class="score">{score}</span>
+<div class="readout">
+  <span class="mono">{label}</span>
+  <strong class="value">{score}</strong>
   {#if streak >= 2}
-    <span class="streak">🔥 {streak}</span>
+    <span class="streak mono" title="streak">×{streak}</span>
   {/if}
 </div>
 
 <style>
-  .scoreboard {
-    display: flex;
+  .readout {
+    display: inline-flex;
     align-items: baseline;
-    gap: 1rem;
+    gap: 0.6rem;
+  }
+  .value {
+    font-family: var(--mono);
+    font-size: 1.35rem;
+    font-weight: 500;
     font-variant-numeric: tabular-nums;
+    color: var(--paper);
+    line-height: 1;
   }
-  .progress {
-    opacity: 0.7;
-  }
-  .score {
-    font-size: 1.5rem;
-    font-weight: 700;
+  .streak {
+    color: var(--brass);
+    font-size: 0.78rem;
+    letter-spacing: 0.1em;
   }
 </style>

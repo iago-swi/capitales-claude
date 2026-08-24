@@ -32,7 +32,23 @@ export type MessageKey =
   | 'highScores'
   | 'noScoresYet'
   | 'playAgain'
-  | 'whichCapital';
+  | 'whichCapital'
+  | 'wordmark'
+  | 'surveyEyebrow'
+  | 'countries'
+  | 'taglineA'
+  | 'taglineB'
+  | 'taglineSub'
+  | 'beginRun'
+  | 'identifyMarker'
+  | 'survey'
+  | 'capitalLocation'
+  | 'projection'
+  | 'bestScore'
+  | 'noBestYet'
+  | 'viewScores'
+  | 'back'
+  | 'answered';
 
 export const MESSAGES: Localized<Record<MessageKey, string>> = {
   en: {
@@ -60,6 +76,22 @@ export const MESSAGES: Localized<Record<MessageKey, string>> = {
     noScoresYet: 'No scores yet.',
     playAgain: 'Play again',
     whichCapital: 'Which city is the capital?',
+    wordmark: 'Capitales',
+    surveyEyebrow: 'Cartographic survey',
+    countries: 'countries',
+    taglineA: 'Read the land.',
+    taglineB: 'Name the capital.',
+    taglineSub: 'One outline. One marker. Four cities.',
+    beginRun: 'Begin the survey',
+    identifyMarker: 'Identify the marker',
+    survey: 'Survey',
+    capitalLocation: 'Capital location',
+    projection: 'Azimuthal equal-area',
+    bestScore: 'Best score',
+    noBestYet: 'No survey filed yet',
+    viewScores: 'High scores',
+    back: 'Back',
+    answered: 'answered',
   },
   fr: {
     loading: 'Chargement…',
@@ -86,6 +118,22 @@ export const MESSAGES: Localized<Record<MessageKey, string>> = {
     noScoresYet: 'Aucun score pour l’instant.',
     playAgain: 'Rejouer',
     whichCapital: 'Quelle ville est la capitale ?',
+    wordmark: 'Capitales',
+    surveyEyebrow: 'Relevé cartographique',
+    countries: 'pays',
+    taglineA: 'Lisez le territoire.',
+    taglineB: 'Nommez la capitale.',
+    taglineSub: 'Une silhouette. Un repère. Quatre villes.',
+    beginRun: 'Commencer le relevé',
+    identifyMarker: 'Identifiez le repère',
+    survey: 'Relevé',
+    capitalLocation: 'Emplacement de la capitale',
+    projection: 'Projection azimutale équivalente',
+    bestScore: 'Meilleur score',
+    noBestYet: 'Aucun relevé déposé',
+    viewScores: 'Meilleurs scores',
+    back: 'Retour',
+    answered: 'répondu',
   },
 };
 
