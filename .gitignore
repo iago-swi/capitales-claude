@@ -17,3 +17,8 @@ release/
 # They are generated from the SVGs by `npm run icons`, but committing them
 # keeps packaging free of a native rasteriser dependency — the same reasoning
 # that keeps the ETL outputs in the repository.
+
+# Android: generated native project and build output.
+# capacitor.config.ts + assets/ are the sources; `npx cap add android` regenerates the rest.
+apps/android/android/
+apps/android/release/

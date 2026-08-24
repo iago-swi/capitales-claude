@@ -34,6 +34,7 @@ localStorage. Small enough to email.
     npm run dev:desktop      # build and run the desktop app
     npm run package:win      # Windows: installer + portable exe
     npm run package:linux    # Linux: tarball
+    npm run package:android  # Android: APK (needs the Android SDK + a JDK 21)
 
 Artifacts land in `apps/desktop/release`:
 
@@ -43,7 +44,9 @@ Artifacts land in `apps/desktop/release`:
 | `Capitales-<version>-portable.exe` | Windows, no installation — just run it |
 | `Capitales-<version>-x64.tar.gz` | Linux — extract and run `./capitales` |
 
-`apps/single/dist/index.html` is the no-install option, 130× smaller.
+`apps/android/release/Capitales-debug.apk` (4.5 MB) is the Android build, and
+`apps/single/dist/index.html` (780 KB) the no-install option, 130× smaller than
+the desktop installers.
 
 AppImage and `.deb` are configured but need a Linux machine, WSL or Docker;
 see `PROJECT.md` section 14.

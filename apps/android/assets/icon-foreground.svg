@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 432 432" width="432" height="432">
+  <!--
+    The adaptive-icon foreground layer.
+
+    Transparent: Android composites this over the background colour and then
+    masks the pair to whatever shape the launcher uses — circle, squircle,
+    rounded square. Drawing our own rounded rectangle here would be masked a
+    second time and produce a visibly clipped corner.
+
+    The marker is drawn at ~58% of the canvas because the outer ~25% of an
+    adaptive icon is reserved: launchers crop into it, and parallax shifts the
+    layers against each other. Anything outside the inner safe zone can be cut.
+  -->
+  <g transform="translate(216 216)">
+    <circle r="118" fill="none" stroke="#e8b54b" stroke-width="7" opacity="0.4" />
+    <circle r="70" fill="none" stroke="#e8b54b" stroke-width="11" opacity="0.8" />
+    <g stroke="#e8b54b" stroke-width="11" stroke-linecap="round" opacity="0.85">
+      <path d="M0 -156V-112" />
+      <path d="M0 112V156" />
+      <path d="M-156 0H-112" />
+      <path d="M112 0H156" />
+    </g>
+    <circle r="34" fill="#e8b54b" />
+  </g>
+</svg>

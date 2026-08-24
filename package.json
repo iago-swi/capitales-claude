@@ -20,7 +20,9 @@
     "package:win": "npm run build:desktop && npm run package -w @capitales/desktop",
     "package:linux": "npm run build:desktop && npm run package:linux -w @capitales/desktop",
     "icons": "npm run icons -w @capitales/desktop",
-    "build:single": "npm run build -w @capitales/single"
+    "build:single": "npm run build -w @capitales/single",
+    "build:android": "npm run build:single && npm run sync -w @capitales/android",
+    "package:android": "npm run build:android && npm run apk -w @capitales/android"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",

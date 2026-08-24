@@ -661,6 +661,57 @@ questions se joue, et un score revendiqué survit au rechargement.
 scores vivent dans le `localStorage` de ce navigateur — par navigateur, par
 machine.
 
+### Android
+
+```bash
+npm run package:android   # -> apps/android/release/Capitales-debug.apk, 4,5 Mo
+```
+
+**Capacitor**, qui emballe l'application dans la WebView d'Android. Même principe
+que la version fichier unique et pour la même raison : le téléphone possède déjà
+un moteur de rendu, donc l'APK n'en embarque pas. C'est pourquoi il fait 4,5 Mo
+et non les 101 Mo d'Electron.
+
+**`webDir` pointe sur `apps/single/dist`.** L'app Android n'a pas de bundle à
+elle : la version fichier unique contient déjà la géométrie, les données et les
+styles, et range déjà les scores dans `localStorage`, ce qu'une WebView fournit
+nativement. L'app mobile n'a donc besoin ni de couche de données, ni de serveur,
+ni de plugin SQLite — le travail qui a rendu un seul fichier HTML autonome est
+exactement celui dont une app mobile hors ligne a besoin.
+
+**Deux JDK.** Gradle refuse de démarrer sur une JVM plus récente que ce qu'il
+connaît. Le Java du système est ici en 25, Gradle 8.14 s'arrête à 24, et le
+message est le mémorable `Unsupported class file major version 69` — 69 étant
+Java 25, dans une table qui va de 65 = Java 21 à 69 = Java 25. Le JDK embarqué
+dans Android Studio est lui aussi en 25 et n'aide en rien : celui-là fait tourner
+l'IDE, pas Gradle. Un JDK 21 est donc installé à côté, et `build-apk.mjs`
+recherche un JDK dans la plage supportée pour ne l'utiliser que sur cette
+compilation, sans toucher au défaut du système.
+
+**Les icônes.** Android réclame une icône adaptative — un calque avant transparent
+que le lanceur masque et décale au-dessus d'une couleur de fond — plus les icônes
+carrée et ronde héritées pour les lanceurs plus anciens.
+`apps/android/make-icons.mjs` produit les deux depuis du SVG, en utilisant le
+dessin simplifié sous 96 px pour la même raison que la version bureau. Le repère
+reste dans la zone sûre intérieure, les lanceurs rognant le quart extérieur d'une
+icône adaptative.
+
+**Une réserve, énoncée parce qu'elle n'est pas testée.** Le manifeste déclare
+encore la permission `INTERNET` que Capacitor ajoute par défaut. Le jeu ne fait
+aucune requête réseau, elle devrait donc disparaître — mais Capacitor sert ses
+fichiers via un intercepteur local, et vérifier que la retirer n'empêche pas
+l'app de démarrer demande un vrai appareil, indisponible ici. Pour essayer :
+supprimez la ligne `uses-permission` de
+`apps/android/android/app/src/main/AndroidManifest.xml`, recompilez, installez
+sur un téléphone. Si l'app s'ouvre, la permission était inutile.
+
+L'APK est une version de débogage, donc signée avec la clé jetable de debug :
+parfait pour l'installer sur votre propre téléphone, pas pour de la distribution.
+
+**`apps/android/android/` est ignoré par git.** Il est généré par
+`npx cap add android` ; les sources sont `capacitor.config.ts`, `assets/` et les
+deux scripts. Régénérez-le avec `npx cap add android` depuis `apps/android`.
+
 ### Linux
 
 `npm run package:linux` produit `Capitales-0.0.0-x64.tar.gz` : on extrait et on
