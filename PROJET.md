@@ -532,7 +532,7 @@ réellement ardu. C'est une fonctionnalité, en un sens.
 
 ---
 
-## 14. Les applications de bureau
+## 14. Distribution
 
 ```bash
 npm run dev:desktop      # construire et lancer
@@ -595,6 +595,49 @@ Electron plutôt que Tauri : Tauri produirait un installateur de ~5 Mo au lieu d
 ~101 Mo, mais il exige la chaîne d'outils Rust et les MSVC Build Tools, soit
 plusieurs gigaoctets absents de cette machine. L'enveloppe ne détient aucune
 logique de jeu, donc en changer plus tard reste une modification contenue.
+
+### La version fichier unique
+
+```bash
+npm run build:single    # -> apps/single/dist/index.html, un fichier, 780 Ko
+```
+
+On double-clique. Ça s'ouvre dans le navigateur déjà installé, sous Windows,
+Linux, macOS ou sur téléphone. Rien à installer, rien à désinstaller, et ça
+s'envoie en pièce jointe.
+
+**Pourquoi c'est 130 fois plus petit que l'exécutable.** L'application ne pèse
+que 1637 Ko une fois construite ; les 99,7 Mo restants de l'installateur sont
+Chromium. Cette version n'embarque aucun runtime et emprunte le navigateur que
+la machine possède déjà.
+
+Passer de 1637 Ko à 780 Ko tient presque entièrement aux polices : les polices
+web embarquées font 879 Ko, et les inliner imposerait du base64, soit un tiers
+de plus. Cette version utilise des piles de polices système choisies pour
+préserver le caractère typographique — une linéale humaniste, une vraie italique
+à empattements pour la ligne d'affichage, une à chasse fixe d'aspect technique —
+toutes présentes sous Windows, macOS et les bureaux Linux courants.
+
+**Comment fonctionne la substitution du stockage.** `packages/data-local`
+exporte exactement les trois fonctions qu'`apps/web` importe de
+`@capitales/data` — `loadCountries`, `saveRun`, `topScores` — adossées aux
+données embarquées et à `localStorage`. `apps/single/vite.config.ts` aiguille
+l'une vers l'autre par alias : pas une ligne du jeu, de l'interface ou du store
+ne sait laquelle elle a reçue, et aucun code parlant à un serveur n'atteint le
+bundle. Cette substitution n'est possible que parce que rien au-dessus de cette
+couche n'a jamais su qu'une base de données existait.
+
+L'alias est ancré par `/^@capitales\/data$/` plutôt que par une chaîne simple :
+une chaîne simple capture aussi le préfixe de `@capitales/data/capitals.json` et
+réécrit ce sous-chemin vers le fichier de remplacement.
+
+**Vérifié sur une vraie origine `file://`**, et pas seulement en HTTP : le
+module inline s'exécute, `localStorage` fonctionne, une manche complète de dix
+questions se joue, et un score revendiqué survit au rechargement.
+
+**Ce qu'on abandonne :** SQLite, et un classement partagé entre navigateurs. Les
+scores vivent dans le `localStorage` de ce navigateur — par navigateur, par
+machine.
 
 ### Linux
 

@@ -486,7 +486,7 @@ feature, arguably.
 
 ---
 
-## 14. The Windows app
+## 14. Distribution
 
 ```bash
 npm run dev:desktop      # build and run it
@@ -543,6 +543,45 @@ Electron rather than Tauri: Tauri would produce a ~5 MB installer instead of
 ~101 MB, but it needs the Rust toolchain and MSVC Build Tools, several GB that
 this machine does not have. The shell owns no game logic, so switching later is
 a contained change.
+
+### The single-file build
+
+```bash
+npm run build:single    # -> apps/single/dist/index.html, one file, 780 KB
+```
+
+Double-click it. It opens in whatever browser is already installed, on Windows,
+Linux, macOS or a phone. Nothing to install, nothing to uninstall, and it can be
+emailed as an attachment.
+
+**Why it is 130× smaller than the executable.** The application itself is only
+1637 KB built; the other 99.7 MB of the installer is Chromium. This build ships
+no runtime at all and borrows the browser the machine already has.
+
+Getting from 1637 KB to 780 KB is almost entirely fonts: the bundled web fonts
+are 879 KB, and inlining them would mean base64, costing a further third on top.
+This build uses system font stacks chosen to keep the typographic character —
+a humanist UI face, a real italic serif for the display line, a technical
+monospace — all of which ship with Windows, macOS and mainstream Linux.
+
+**How the storage swap works.** `packages/data-local` exports exactly the three
+functions `apps/web` imports from `@capitales/data` — `loadCountries`,
+`saveRun`, `topScores` — backed by the bundled country data and `localStorage`.
+`apps/single/vite.config.ts` aliases one onto the other, so not one line of the
+game, the UI or the store knows which it got, and no code that talks to a server
+reaches the bundle. That substitution is only possible because nothing above
+that layer ever knew a database existed.
+
+The alias is anchored with `/^@capitales\/data$/` rather than a bare string: a
+plain string alias also matches the prefix of `@capitales/data/capitals.json`
+and rewrites that subpath onto the replacement file.
+
+**Verified at a real `file://` origin**, not merely over HTTP: the inline module
+executes, `localStorage` works, a full ten-question round plays through, and a
+claimed score persists across reloads.
+
+**What it gives up:** SQLite, and a leaderboard shared between browsers. Scores
+live in that browser's `localStorage` — per browser, per machine.
 
 ### Linux
 

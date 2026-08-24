@@ -1,0 +1,94 @@
+@import 'tailwindcss';
+
+/*
+ * Same design as the hosted app, with one deliberate difference: no bundled
+ * fonts.
+ *
+ * The web-fonts account for 879 KB of the 1637 KB build — more than half the
+ * payload — and inlining them into a single HTML file would mean base64, which
+ * costs a further third on top. Dropping them takes this file from ~1.7 MB to
+ * under 900 KB, which is the whole point of this build.
+ *
+ * The stacks below are chosen so the typographic *character* survives: a
+ * humanist UI face, a real italic serif for the display line, and a
+ * fixed-width face with a technical feel. Every entry ships with Windows,
+ * macOS or a mainstream Linux desktop.
+ */
+:root {
+  --abyss: #0a1628;
+  --abyss-deep: #06101d;
+  --shelf: #122744;
+  --grid: #1b3557;
+  --brass: #e8b54b;
+  --brass-dim: #8a6b2c;
+  --sage: #c4d6c9;
+  --paper: #e9f0f7;
+  --dim: #89a2be;
+  --signal: #63c68a;
+  --warn: #f0913c;
+  --alarm: #e8705f;
+
+  --sans: system-ui, 'Segoe UI Variable Text', 'Segoe UI', -apple-system,
+    'Helvetica Neue', 'Noto Sans', sans-serif;
+  --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia,
+    'Liberation Serif', 'Times New Roman', serif;
+  --mono: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', 'SF Mono', Consolas,
+    'DejaVu Sans Mono', monospace;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /*
+   * The window is the frame. Nothing scrolls the page itself: the layout is
+   * sized in viewport units so it fits whatever window it is given, and the
+   * only scroll container is <main>, as a safety valve on very short windows.
+   */
+  overflow: hidden;
+  background:
+    radial-gradient(
+      120% 90% at 50% 0%,
+      #163050 0%,
+      var(--abyss) 45%,
+      var(--abyss-deep) 100%
+    );
+  color: var(--paper);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Technical labels: coordinates, counters, section eyebrows. */
+.mono {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+button:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@capitales/single",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@capitales/core": "*",
+    "@capitales/data-local": "*",
+    "@capitales/geo": "*",
+    "@capitales/ui": "*"
+  },
+  "devDependencies": {
+    "vite": "*",
+    "@sveltejs/vite-plugin-svelte": "*",
+    "svelte": "*",
+    "tailwindcss": "*",
+    "@tailwindcss/vite": "*",
+    "vite-plugin-singlefile": "^2.3.3"
+  }
+}

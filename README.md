@@ -21,6 +21,14 @@ Then two terminals:
     npm run server     # API on http://127.0.0.1:8787
     npm run dev        # app on http://localhost:5173
 
+## One file, no install
+
+    npm run build:single     # -> apps/single/dist/index.html
+
+A single 780 KB HTML file. Double-click it and it opens in whatever browser you
+already have — Windows, Linux, macOS, phone. Scores are kept in that browser's
+localStorage. Small enough to email.
+
 ## Desktop builds
 
     npm run dev:desktop      # build and run the desktop app
@@ -34,6 +42,8 @@ Artifacts land in `apps/desktop/release`:
 | `Capitales-<version>-setup.exe` | Windows installer |
 | `Capitales-<version>-portable.exe` | Windows, no installation — just run it |
 | `Capitales-<version>-x64.tar.gz` | Linux — extract and run `./capitales` |
+
+`apps/single/dist/index.html` is the no-install option, 130× smaller.
 
 AppImage and `.deb` are configured but need a Linux machine, WSL or Docker;
 see `PROJECT.md` section 14.
