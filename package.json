@@ -12,13 +12,19 @@
     "typecheck": "tsc -p tsconfig.base.json --noEmit",
     "build:data": "tsx packages/data/src/build-data.ts",
     "seed": "tsx apps/server/src/seed.ts",
-    "server": "tsx apps/server/src/server.ts"
+    "server": "tsx apps/server/src/server.ts",
+    "dev": "npm run dev -w @capitales/web",
+    "build": "npm run build -w @capitales/web"
   },
   "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.2.0",
     "svelte": "^5.56.10",
+    "tailwindcss": "^4.3.3",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",
+    "vite": "^8.2.2",
     "vitest": "^4.1.11"
   }
 }
