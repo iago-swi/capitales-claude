@@ -20,6 +20,14 @@
     guessXY?: [number, number] | null;
     /** Show the answer: real marker, the guess, and the line between them. */
     revealed?: boolean;
+    /**
+     * Pixel radius of the on-target zone, drawn around the capital on reveal.
+     *
+     * The results screen counts drops that landed "on target", and until this
+     * was drawn that phrase named something the player could never see. The
+     * circle is the whole explanation: inside it the streak survives.
+     */
+    targetPx?: number | null;
     /** Called with pixel coordinates inside the viewBox when the map is used. */
     onpick?: ((x: number, y: number) => void) | undefined;
   }
@@ -32,6 +40,7 @@
     hideMarker = false,
     guessXY = null,
     revealed = false,
+    targetPx = null,
     onpick = undefined,
   }: Props = $props();
 
@@ -84,6 +93,16 @@
     <path class="land" d={pathD} />
   {/key}
 
+  <!-- The target underneath everything, so it reads as ground, not as a mark. -->
+  {#if revealed && targetPx}
+    <circle
+      class="target"
+      cx={dotXY[0]}
+      cy={dotXY[1]}
+      r={targetPx}
+    />
+  {/if}
+
   <!-- The line first, so both markers sit on top of it. -->
   {#if revealed && guessXY}
     <line
@@ -132,6 +151,67 @@
      * edge. A slightly clipped halo is invisible; a scrollbar is not.
      */
     overflow: hidden;
+  }
+
+  .target {
+    fill: var(--alarm);
+    fill-opacity: 0.1;
+    stroke: var(--alarm);
+    stroke-width: 1.75;
+    stroke-dasharray: 7 5;
+    /*
+     * Shown briefly and then gone. Long enough to answer "what is the target?"
+     * on the question where you first wonder, short enough that it never gets
+     * in the way of reading the miss line on the questions after that. The
+     * placing reveal lasts 2200ms, so this clears the screen well before the
+     * next country arrives.
+     */
+    animation: target-flash 1500ms ease-out both;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
+  @keyframes target-flash {
+    0% {
+      opacity: 0;
+      transform: scale(0.86);
+    }
+    12% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    60% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1);
+    }
+  }
+
+  /*
+   * Still brief, just not moving. Dropping the animation entirely would leave
+   * the circle on screen for ever, which is the opposite of what was asked.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    .target {
+      animation: target-fade 1500ms ease-out both;
+    }
+  }
+
+  @keyframes target-fade {
+    0%,
+    12% {
+      opacity: 0;
+    }
+    13%,
+    60% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
   }
 
   .chart.interactive {

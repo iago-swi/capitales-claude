@@ -40,6 +40,16 @@ export interface FittedCountry {
    */
   reachKm: number;
   /**
+   * The pixel radius of a circle of `km` around the capital.
+   *
+   * The scoring talks about a target; drawing it is what makes the phrase "on
+   * target" mean something to the player. Computed by projecting a point that
+   * really is `km` away rather than by scaling a constant: the projection is
+   * equal-area, so its radial scale is not linear in distance, and at Russia's
+   * size the difference between the two is visible on screen.
+   */
+  radiusPx: (km: number) => number;
+  /**
    * Turns a pixel position in this frame back into [lon, lat].
    *
    * The inverse of the projection that drew the outline, so a click on the map
@@ -330,6 +340,17 @@ export function fitCountry(
     pathD,
     dotXY: [dot[0], dot[1]],
     reachKm,
+    radiusPx: (km) => {
+      // The projection is centred on the capital and therefore radially
+      // symmetric about it, so any bearing gives the same answer. Due north is
+      // the cheapest to write and behaves at the poles like any other.
+      const c = km / EARTH_RADIUS_KM;
+      const lat1 = lat * DEG;
+      const lat2 = Math.asin(Math.sin(lat1) * Math.cos(c) + Math.cos(lat1) * Math.sin(c));
+      const away = projection([lon, lat2 / DEG]);
+      if (!away || !Number.isFinite(away[0]) || !Number.isFinite(away[1])) return 0;
+      return Math.hypot(away[0] - dot[0], away[1] - dot[1]);
+    },
     bounds: [
       [x0, y0],
       [x1, y1],

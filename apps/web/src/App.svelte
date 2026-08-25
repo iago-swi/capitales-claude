@@ -4,6 +4,7 @@
   import { buildAtlas, fitCountry } from '@capitales/geo';
   import {
     averageOffKm,
+    correctDistanceFor,
     isCloseEnough,
     isCorrect,
     PLACE_FULL_KM,
@@ -76,6 +77,19 @@
     const placed = game.state.placed;
     if (!fitted || !placed) return null;
     return fitted.project(placed);
+  });
+
+  /**
+   * Pixel radius of the on-target zone, for drawing it on the reveal.
+   *
+   * The results screen counts drops that landed "on target", and the phrase
+   * named nothing the player could see until this circle existed. Derived from
+   * the same function the scoring uses, so the drawing cannot drift from the
+   * rule it illustrates.
+   */
+  let targetPx = $derived.by(() => {
+    if (!fitted) return null;
+    return fitted.radiusPx(correctDistanceFor(fitted.reachKm));
   });
 
   function optionState(i: number): 'idle' | 'correct' | 'wrong' | 'muted' {
@@ -321,6 +335,7 @@
               hideMarker={placing}
               guessXY={placing ? guessXY : null}
               revealed={revealing}
+              targetPx={placing ? targetPx : null}
               onpick={placing && game.state.phase === 'question'
                 ? dropMarker
                 : undefined}
