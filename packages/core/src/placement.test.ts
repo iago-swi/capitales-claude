@@ -5,6 +5,8 @@ import {
   correctDistanceFor,
   missDistanceFor,
   PLACE_MAX_PENALTY,
+  PLACE_FULL_KM,
+  fullPenaltyDistanceFor,
   scaleFor,
   isCloseEnough,
   placementAccuracy,
@@ -68,12 +70,16 @@ describe('placementAccuracy', () => {
 
   it('actually discriminates, which the first curve did not', () => {
     // The original sqrt curve paid 77% at 1000 km, so every run scored alike.
-    // Knowing a capital to 100 km must be worth far more than knowing its
-    // continent.
-    expect(placementAccuracy(100)).toBeGreaterThan(0.8);
-    expect(placementAccuracy(500)).toBeLessThan(0.4);
-    expect(placementAccuracy(1000)).toBeLessThan(0.15);
-    expect(placementAccuracy(100) / placementAccuracy(1000)).toBeGreaterThan(6);
+    // Stated in fractions of the map, because that is what the player sees: a
+    // drop a twentieth of the way across the frame must be worth far more than
+    // one most of the way across it.
+    const reach = 1100;
+    const near = placementAccuracy(0.05 * reach, reach);
+    const far = placementAccuracy(0.8 * reach, reach);
+    expect(near).toBeGreaterThan(0.8);
+    expect(placementAccuracy(0.4 * reach, reach)).toBeLessThan(0.25);
+    expect(far).toBeLessThan(0.06);
+    expect(near / far).toBeGreaterThan(6);
   });
 
   it('never returns a negative accuracy', () => {
@@ -95,9 +101,11 @@ describe('placementPenalty', () => {
     expect(just).toBeGreaterThan(-15);
   });
 
-  it('reaches the full penalty at twice the miss distance', () => {
-    expect(placementPenalty(missDistanceFor() * 2)).toBe(-PLACE_MAX_PENALTY);
-    expect(placementPenalty(missDistanceFor() * 9)).toBe(-PLACE_MAX_PENALTY);
+  it('reaches the full penalty at the far corner of the map', () => {
+    expect(placementPenalty(fullPenaltyDistanceFor())).toBe(-PLACE_MAX_PENALTY);
+    expect(placementPenalty(fullPenaltyDistanceFor() * 9)).toBe(
+      -PLACE_MAX_PENALTY,
+    );
   });
 });
 
@@ -108,10 +116,10 @@ describe('scorePlacement', () => {
   });
 
   it('costs points for a wild guess', () => {
-    // The penalty ramps, so 3000 km is only part of the way to the worst case
-    // at the default scale; twice the miss distance is where it bottoms out.
-    expect(scorePlacement(3000, QUESTION_MS, 5)).toBeLessThan(-50);
-    expect(scorePlacement(missDistanceFor() * 2, QUESTION_MS, 5)).toBe(
+    // The penalty ramps, so a drop just past the threshold is only part of the
+    // way to the worst case; the far corner of the map is where it bottoms out.
+    expect(scorePlacement(missDistanceFor() * 1.5, QUESTION_MS, 5)).toBeLessThan(0);
+    expect(scorePlacement(fullPenaltyDistanceFor(), QUESTION_MS, 5)).toBe(
       -PLACE_MAX_PENALTY,
     );
   });
@@ -192,11 +200,12 @@ describe('averageOffKm', () => {
 });
 
 describe('scaling by country size', () => {
-  // The radii the atlas actually produces for these countries.
-  const SWITZERLAND = 115;
-  const FRANCE = 450;
-  const CANADA = 1773;
-  const VATICAN = 1;
+  // The reach — furthest corner of the frame from the capital — that the atlas
+  // actually produces for these countries at the game's frame size.
+  const SWITZERLAND = 278;
+  const FRANCE = 1116;
+  const CANADA = 5977;
+  const VATICAN = 2;
 
   it('punishes the same error harder in a small country', () => {
     // The fault this fixes: a fixed scale scored 200 km at 68% for the
@@ -208,23 +217,31 @@ describe('scaling by country size', () => {
     expect(inCanada / inSwitzerland).toBeGreaterThan(2.5);
   });
 
-  it('is nearly the same score for the same error relative to the country', () => {
-    // Out by one country-radius costs about the same wherever you are. Not
+  it('is nearly the same score for the same error relative to the map', () => {
+    // Out by a quarter of the frame costs about the same wherever you are. Not
     // exactly: the 25 km bullseye allowance is a fixed distance, so it is
-    // proportionally more generous on a small scale than a large one.
+    // proportionally more generous on a small map than a large one.
     const a = placementAccuracy(scaleFor(FRANCE), FRANCE);
     const b = placementAccuracy(scaleFor(CANADA), CANADA);
-    expect(Math.abs(a - b) / a).toBeLessThan(0.05);
+    expect(Math.abs(a - b) / a).toBeLessThan(0.1);
   });
 
-  it('floors the scale so a micro-state does not demand metre precision', () => {
-    expect(scaleFor(VATICAN)).toBe(120);
+  it('floors every distance so a micro-state does not demand metre precision', () => {
+    // The Vatican's frame is two kilometres across. Without the floor, being on
+    // target would mean 300 metres — a pixel-hunting contest, not geography.
+    expect(scaleFor(VATICAN)).toBe(PLACE_FULL_KM);
+    expect(correctDistanceFor(VATICAN)).toBe(PLACE_FULL_KM);
     expect(placementAccuracy(20, VATICAN)).toBe(1);
   });
 
-  it('caps the scale so a huge country does not make sloppiness free', () => {
-    expect(scaleFor(CANADA)).toBe(900);
-    expect(scaleFor(9999)).toBe(900);
+  it('keeps the penalty inside the map, which the last version did not', () => {
+    // The bug this exists to catch. The miss threshold was 4x a scale capped at
+    // 900 km, so it sat at 1800 km for France — off the edge of a frame whose
+    // furthest corner is 1116 km away. A wild guess was free in 157 countries.
+    for (const reach of [SWITZERLAND, FRANCE, CANADA, 7788]) {
+      expect(missDistanceFor(reach)).toBeLessThan(reach);
+      expect(placementPenalty(reach, reach)).toBe(-PLACE_MAX_PENALTY);
+    }
   });
 
   it('moves the on-target and miss distances with the country', () => {
@@ -235,9 +252,10 @@ describe('scaling by country size', () => {
     expect(isCloseEnough(200, CANADA)).toBe(true);
   });
 
-  it('falls back to a sensible scale when no size is given', () => {
-    expect(scaleFor(undefined)).toBe(450);
-    expect(scaleFor(Number.NaN)).toBe(450);
+  it('falls back to a sensible scale when no map size is given', () => {
+    expect(scaleFor(undefined)).toBe(275);
+    expect(scaleFor(Number.NaN)).toBe(275);
+    expect(scaleFor(0)).toBe(275);
   });
 
   it('penalises a wild guess sooner in a small country', () => {

@@ -40,7 +40,7 @@ export type GameEvent =
   | { type: 'LOADED'; questions: Question[]; mode?: Mode }
   | { type: 'START'; now: number }
   | { type: 'ANSWER'; optionIndex: number; now: number }
-  | { type: 'PLACE'; lonLat: LonLat; now: number; radiusKm?: number }
+  | { type: 'PLACE'; lonLat: LonLat; now: number; reachKm?: number }
   | { type: 'TIMEOUT'; now: number }
   | { type: 'REVEAL_DONE'; now: number }
   | { type: 'SUBMIT' }
@@ -147,7 +147,7 @@ function settlePlacement(
   state: GameState,
   lonLat: LonLat | null,
   now: number,
-  radiusKm?: number,
+  reachKm?: number,
 ): GameState {
   const question = state.questions[state.index];
   if (!question) return state;
@@ -156,14 +156,14 @@ function settlePlacement(
   const offKm = lonLat === null ? null : distanceKm(lonLat, truth);
   // Scored against the country's own size: 200 km from Bern is a miss, 200 km
   // from Ottawa is a good guess.
-  const correct = isCloseEnough(offKm, radiusKm);
+  const correct = isCloseEnough(offKm, reachKm);
 
   const elapsed = now - state.questionStartedAt;
   const remaining = Math.max(0, QUESTION_MS - elapsed);
   const streak = correct ? state.streak + 1 : 0;
 
   return {
-    ...record(state, now, correct, scorePlacement(offKm, remaining, streak, radiusKm), {
+    ...record(state, now, correct, scorePlacement(offKm, remaining, streak, reachKm), {
       code: question.country.code,
       // The city was shown, not chosen — recording it keeps the answer row
       // readable next to a naming run.
@@ -207,7 +207,7 @@ export function reduce(state: GameState, event: GameEvent): GameState {
 
     case 'PLACE':
       if (state.phase !== 'question' || state.mode !== 'place') return state;
-      return settlePlacement(state, event.lonLat, event.now, event.radiusKm);
+      return settlePlacement(state, event.lonLat, event.now, event.reachKm);
 
     case 'TIMEOUT':
       if (state.phase !== 'question') return state;

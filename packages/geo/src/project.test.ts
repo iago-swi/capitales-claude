@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { Topology } from 'topojson-specification';
-import type { CountryRecord } from '@capitales/core';
+import {
+  missDistanceFor,
+  PLACE_FULL_KM,
+  type CountryRecord,
+} from '@capitales/core';
 import topo from '../../data/countries.topo.json' with { type: 'json' };
 import capitals from '../../data/capitals.json' with { type: 'json' };
 import { geoBounds } from 'd3-geo';
@@ -240,5 +244,53 @@ describe('unproject', () => {
     const below = unproject(box.width / 2, box.height / 2 + 60)!;
     expect(right[0]).toBeGreaterThan(centre[0]);
     expect(below[1]).toBeLessThan(centre[1]);
+  });
+});
+
+describe('reachKm', () => {
+  it('is the distance to the furthest corner of the frame', () => {
+    const che = get('CHE');
+    const fit = fitCountry(featureFor('CHE'), che.capitalLonLat, box);
+    // Switzerland is a few hundred kilometres across, and the frame adds
+    // padding around it. Anything near zero or in the thousands is a bug.
+    expect(fit.reachKm).toBeGreaterThan(150);
+    expect(fit.reachKm).toBeLessThan(500);
+  });
+
+  it('grows with the country', () => {
+    const reach = (code: string) =>
+      fitCountry(featureFor(code), get(code).capitalLonLat, box).reachKm;
+    expect(reach('CHE')).toBeLessThan(reach('FRA'));
+    expect(reach('FRA')).toBeLessThan(reach('CAN'));
+  });
+
+  it('leaves a wild guess punishable on every map worth missing', () => {
+    // The regression this exists to catch, and the reason it lives in `geo`
+    // rather than `core`: the scoring was calibrated in absolute kilometres
+    // while the frame bounds the error. Nothing in `core` knows how much world
+    // is on screen, so no unit test there could ever have seen that the miss
+    // threshold sat off the edge of the map in 157 of 193 countries.
+    const unpunishable: string[] = [];
+    const tooSmallToMiss: string[] = [];
+
+    for (const c of countries) {
+      const f = atlas.get(c.code);
+      if (!f) continue;
+      const { reachKm } = fitCountry(f, c.capitalLonLat, box);
+      // A frame this small is entirely inside the bullseye allowance: there is
+      // no such thing as a wild guess in a two-kilometre-wide country.
+      if (reachKm <= PLACE_FULL_KM * 4) {
+        tooSmallToMiss.push(c.code);
+        continue;
+      }
+      if (missDistanceFor(reachKm) >= reachKm) unpunishable.push(c.code);
+    }
+
+    expect(unpunishable).toEqual([]);
+    // Twenty of them, Vatican (2 km across) through Luxembourg (92 km). They
+    // are all genuine micro-states, and a drop anywhere in such a frame really
+    // is right. The bound is here to notice if a normal country ever joins
+    // them, which would mean the fitting broke.
+    expect(tooSmallToMiss.length).toBeLessThanOrEqual(22);
   });
 });

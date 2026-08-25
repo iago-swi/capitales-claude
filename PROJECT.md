@@ -37,7 +37,7 @@ npm run dev         # the game on http://localhost:5173
 | `npm run dev:desktop` | Builds and launches the Windows app. |
 | `npm run package:win` | Builds the installer into `apps/desktop/release`. |
 | `npm run build:data` | Re-runs the Natural Earth ETL. Rarely needed; outputs are committed. |
-| `npm test` | The whole suite — 184 tests, nothing to start first. |
+| `npm test` | The whole suite — 201 tests, nothing to start first. |
 | `npm run typecheck` | `tsc --noEmit` across every package. |
 
 ---
@@ -397,71 +397,93 @@ control or they do not arrive.
 ### Scoring a placement
 
 ```
+reach    = distance from the capital to the furthest corner of the frame
 distance = haversine(drop, capital)                    great-circle kilometres
-accuracy = distance <= 25 ? 1 : exp(-(distance - 25) / 450)
+accuracy = distance <= 25 ? 1 : exp(-(distance - 25) / (0.25 * reach))
 points   = round((100 + speedBonus) * accuracy * multiplier)
-         = -round(100 * min(1, (distance - 1500) / 1500))   beyond 1500 km
+         = -round(100 * progress towards the corner)   beyond 0.45 * reach
 ```
 
-**The first version of this curve was wrong, and playing it showed why.** It
-used `sqrt(1 - d/2500)`, chosen to be kind to near misses. It was far too kind:
-1000 km still paid 77%, so a player five times less precise lost only a sixth of
-their points and every run landed in the same band. Three runs in a row scoring
-alike is not a scoring system, it is a formality.
+**This scale got it wrong twice, both times for the same reason: calibrating in
+absolute kilometres an action the player performs inside a bounded frame.**
 
-Exponential decay fixes it. 100 km keeps 85%, 500 km keeps 35%, 1000 km keeps
-11%. Modelled over four player profiles, the gap between a careful run and a
-rough one went from 1.2x to 4x.
+The first version used `sqrt(1 - d/2500)`. Far too kind: 1000 km still paid 77%,
+so every run landed in the same band. The second moved to exponential decay with
+negative points beyond 1500 km — and the scores stayed clustered, between 1200
+and 1400.
 
-**Past 1500 km the points go negative**, ramping to -100 at twice that distance.
-A wild guess should cost something, or guessing is free and thinking is
-optional. Placing nothing at all costs the full -100: running the clock down is
-worse than a bad guess, because it is not an attempt.
+Measurement showed why. **The map shows one country and nothing else.** You
+cannot drop a marker 1800 km from Paris, because 1800 km from Paris is not on
+screen: the furthest corner of the French frame is 1116 km away. The penalty
+threshold sat off the edge of the map. Of 193 countries, **157 could not trigger
+negative points at all** — the code was correct and its constant was
+unreachable. A wild guess stayed free, and sloppiness paid nearly as well as
+care.
 
-The penalty deliberately ignores the streak multiplier. A player on a good run
-should not be punished harder for one bad question than a player having a bad
-one.
+Every distance is therefore now a **fraction of the frame's reach** — of the
+largest error the player can make given what they can see. That formulation
+*cannot* reproduce the failure: the scale is, by construction, exactly as wide
+as the mistakes that are possible.
 
-A drop within **250 km** still counts as on target: it keeps a streak alive and
-feeds the "n of 10 on target" count.
+| | Vatican | Switzerland | France | Canada | Russia |
+|---|---|---|---|---|---|
+| Frame reach | 2 km | 278 km | 1116 km | 5977 km | 7788 km |
+| Scale (25%) | 25 km | 70 km | 279 km | 1494 km | 1947 km |
+| On target (15%) | 25 km | 42 km | 167 km | 897 km | 1168 km |
+| Miss (45%) | — | 125 km | 502 km | 2690 km | 3505 km |
+| -100 at the corner | — | 278 km | 1116 km | 5977 km | 7788 km |
+| **Accuracy at 200 km** | 100% | **8%** | 54% | **89%** | 92% |
+
+That is the answer to "being 200 km out in Switzerland is worse than being
+200 km out in Canada": 8% against 89%. And the rule fits in a sentence a player
+can hold in their head — **the corner of the map costs you a hundred**.
+
+A 25 km floor protects the micro-states: the Vatican's frame is two kilometres
+across, and without it "on target" would mean 300 metres, which is a
+pixel-hunting contest rather than a geography question. The twenty countries
+whose frame fits inside 100 km — Vatican through Luxembourg — simply cannot be
+missed, which is the right answer.
+
+Placing nothing at all costs the full -100: running the clock down is worse than
+a bad guess, because it is not an attempt. The penalty deliberately ignores the
+streak multiplier — a player on a good run should not be punished harder for one
+bad question than a player having a bad one.
+
+Modelled over five player profiles, 400 runs each:
+
+| Profile | Total score | Before |
+|---|---|---|
+| expert | 2803 | ~1400 |
+| good | 1919 | ~1300 |
+| average | 759 | ~1250 |
+| weak | 230 | ~1200 |
+| random | **-257** | ~1200 |
+
+The reach travels on the `PLACE` event rather than being looked up in `core`.
+The event carries what the player was actually looking at, and `packages/core`
+still knows nothing about geometry.
 
 A perfect instant drop on a maxed streak is worth 400, exactly like a perfect
 instant naming answer. Neither mode looks inflated beside the other, even though
-the boards are kept apart.
+the leaderboards are separate.
 
-### Scored against the country's own size
+#### The test that was missing
 
-A fixed decay distance scored 200 km at 68% for the Vatican, whose radius is one
-kilometre, and at exactly the same 68% for Russia, whose radius is 2318. That is
-not a scale, it is an accident: 200 km from Bern means you missed Switzerland
-entirely, while 200 km from Ottawa is a good guess.
+No unit test could have caught this, and it is the most useful lesson in the
+project. `packages/core` deliberately knows nothing about geometry: it does not
+know how much world is on screen, so it could not know its threshold was outside
+the frame. `packages/geo` knows the frame but not the scale. **The bug lived in
+the gap between two packages that were both correctly tested.**
 
-So the decay distance comes from the country. `fitCountry` reports the radius of
-a disc with the same area as the landmass **actually on screen** — the capital's
-cluster, so France is sized by metropolitan France and not by the Atlantic
-spread of its departments — and that radius, clamped to 120–900 km, is the
-scale. The on-target distance and the miss threshold move with it too.
-
-| Country | Radius | Scale | 50 km | 200 km | 600 km | On target | Miss |
-|---|---|---|---|---|---|---|---|
-| Vatican, Switzerland, Belgium | 1–115 km | 120 | 81% | **23%** | 1% | < 120 km | > 480 km |
-| Spain, France | 400–450 km | ~450 | 95% | 68% | 26% | < 450 km | > 1800 km |
-| Canada, Russia | 1773–2318 km | 900 | 97% | **82%** | 53% | < 900 km | > 3600 km |
-
-The floor stops a micro-state demanding metre precision; the ceiling stops a
-continent making sloppiness free. Being out by one country-radius costs about
-the same wherever you are — not exactly, because the 25 km bullseye allowance is
-a fixed distance and so is proportionally kinder on a small scale.
-
-The scale travels on the `PLACE` event rather than being looked up in `core`.
-The event carries what the player was actually looking at, and `packages/core`
-still knows nothing about geometry.
+The new test therefore lives in `geo`, imports `missDistanceFor` from `core`,
+and sweeps all 193 real countries checking that the miss threshold falls inside
+the frame. It is the only place where the two halves of the fact meet.
 
 ### Two summaries, because they are two games
 
 The results screen said "8 of 10 answered · best streak 5" in both modes. In
 placing that is simply wrong: you answered all ten, and eight was the number of
-drops within 250 km. Worse, the statistic that actually describes a placing run
+drops that landed on target. Worse, the statistic that describes a placing run
 — how far off you were — appeared nowhere.
 
 Placing now leads with it: **"average error 499 km · 4 / 10 on target · best
@@ -564,7 +586,7 @@ run simply goes unsaved. A network failure must never cost you your result.
 
 ## 12. Testing
 
-**184 tests, one `npm test`, nothing to start first.**
+**201 tests, one `npm test`, nothing to start first.**
 
 That last part is a direct benefit of the SQLite choice: the API tests start the
 real server in-process on an ephemeral port against a `:memory:` database and

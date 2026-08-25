@@ -22,7 +22,8 @@
     "icons": "npm run icons -w @capitales/desktop",
     "build:single": "npm run build -w @capitales/single",
     "build:android": "npm run build:single && npm run sync -w @capitales/android",
-    "package:android": "npm run build:android && npm run apk -w @capitales/android"
+    "package:android": "npm run build:android && npm run apk -w @capitales/android",
+    "verify": "npm run typecheck && npm test && npm run build && npm run build:single"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",

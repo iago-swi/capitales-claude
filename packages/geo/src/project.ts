@@ -26,15 +26,19 @@ export interface FittedCountry {
   /** Pixel bounding box of the outline: [[x0, y0], [x1, y1]]. */
   bounds: [[number, number], [number, number]];
   /**
-   * The radius, in kilometres, of a disc with the same area as the landmass on
-   * screen — one number for "how big is this country".
+   * The furthest the player could possibly be wrong, in kilometres.
    *
-   * Scoring a placement needs it: 200 km from Bern means you missed Switzerland
-   * entirely, while 200 km from Ottawa is a good guess. Measured on the
-   * displayed cluster rather than the whole feature, so France is sized by
-   * metropolitan France and not by the Atlantic spread of its departments.
+   * The map shows one country and nothing else, so the frame bounds the error:
+   * you cannot drop a marker 2000 km from Paris because 2000 km from Paris is
+   * not on screen. Scoring has to be calibrated against this rather than
+   * against absolute geography, or the "wild guess" threshold sits off the edge
+   * of the map and can never be crossed.
+   *
+   * The projection is centred on the capital, so pixel distance from the dot
+   * rises monotonically with real distance and the furthest frame corner is the
+   * furthest reachable point.
    */
-  radiusKm: number;
+  reachKm: number;
   /**
    * Turns a pixel position in this frame back into [lon, lat].
    *
@@ -298,10 +302,34 @@ export function fitCountry(
 
   const [[x0, y0], [x1, y1]] = pathBuilder.bounds(shape);
 
+  const radiusKm = Math.sqrt(
+    (geoArea(shape) * EARTH_RADIUS_KM * EARTH_RADIUS_KM) / Math.PI,
+  );
+
+  // The corners are the furthest points of the frame, and the frame is what
+  // bounds a wrong answer. A corner can fail to invert near the edge of an
+  // azimuthal projection, so the country's own size is the fallback.
+  let reachKm = 0;
+  const corners: [number, number][] = [
+    [0, 0],
+    [box.width, 0],
+    [0, box.height],
+    [box.width, box.height],
+  ];
+  for (const [cx, cy] of corners) {
+    const corner = projection.invert?.([cx, cy]);
+    if (!corner || !Number.isFinite(corner[0]) || !Number.isFinite(corner[1])) {
+      continue;
+    }
+    const d = geoDistance(corner as LonLat, capital) * EARTH_RADIUS_KM;
+    if (Number.isFinite(d) && d > reachKm) reachKm = d;
+  }
+  if (reachKm === 0) reachKm = radiusKm * 2;
+
   return {
     pathD,
     dotXY: [dot[0], dot[1]],
-    radiusKm: Math.sqrt((geoArea(shape) * EARTH_RADIUS_KM * EARTH_RADIUS_KM) / Math.PI),
+    reachKm,
     bounds: [
       [x0, y0],
       [x1, y1],

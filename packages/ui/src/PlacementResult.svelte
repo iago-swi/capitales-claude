@@ -1,9 +1,15 @@
 <script lang="ts">
-  import { PLACE_CORRECT_KM } from '@capitales/core';
-
   interface Props {
     /** Distance from the real capital, or null when nothing was placed. */
     offKm: number | null;
+    /**
+     * Whether that counted as on target. Decided by the caller, because the
+     * threshold depends on the size of the country being asked about — 200 km
+     * is a miss in Switzerland and a good guess in Canada.
+     */
+    onTarget: boolean;
+    /** Whether it was close enough to read as a bullseye rather than a number. */
+    bullseye: boolean;
     points: number;
     labels: {
       offBy: string;
@@ -13,12 +19,9 @@
       points: string;
     };
   }
-  let { offKm, points, labels }: Props = $props();
+  let { offKm, onTarget, bullseye, points, labels }: Props = $props();
 
-  let close = $derived(offKm !== null && offKm <= PLACE_CORRECT_KM);
-  // Under 10 km is a rounding error at this map scale; calling it a number
-  // would understate it.
-  let bullseye = $derived(offKm !== null && offKm < 10);
+  let close = $derived(offKm !== null && onTarget);
 
   /** Whole kilometres below 100, then rounded — false precision helps nobody. */
   let shown = $derived(

@@ -4,7 +4,9 @@
   import { buildAtlas, fitCountry } from '@capitales/geo';
   import {
     averageOffKm,
+    isCloseEnough,
     isCorrect,
+    PLACE_FULL_KM,
     t,
     type MessageKey,
     type Mode,
@@ -98,7 +100,7 @@
     if (!lonLat) return;
     // The size of the landmass actually on screen decides how forgiving the
     // scoring is for this question.
-    game.place(lonLat, fitted.radiusKm);
+    game.place(lonLat, fitted.reachKm);
   }
 
   function onKey(event: KeyboardEvent) {
@@ -351,6 +353,12 @@
               {#if revealing}
                 <PlacementResult
                   offKm={game.state.placedOffKm}
+                  onTarget={isCloseEnough(
+                    game.state.placedOffKm,
+                    fitted.reachKm,
+                  )}
+                  bullseye={game.state.placedOffKm !== null &&
+                    game.state.placedOffKm <= PLACE_FULL_KM}
                   points={game.lastPoints}
                   labels={{
                     offBy: msg('offBy'),
