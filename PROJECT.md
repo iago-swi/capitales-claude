@@ -397,24 +397,49 @@ control or they do not arrive.
 ### Scoring a placement
 
 ```
-distance   = haversine(drop, capital)            great-circle kilometres
-accuracy   = sqrt(1 - distance / 2500)           0 beyond 2500 km
-points     = round((100 + speedBonus) * accuracy * multiplier)
+distance = haversine(drop, capital)                    great-circle kilometres
+accuracy = distance <= 25 ? 1 : exp(-(distance - 25) / 450)
+points   = round((100 + speedBonus) * accuracy * multiplier)
+         = -round(100 * min(1, (distance - 1500) / 1500))   beyond 1500 km
 ```
 
-The curve is deliberately not linear. Linear would make 250 km — essentially the
-right city — worth 90%, which reads as a punishment for being right. The square
-root keeps near misses generous and lets the score fall away only once the guess
-is genuinely elsewhere.
+**The first version of this curve was wrong, and playing it showed why.** It
+used `sqrt(1 - d/2500)`, chosen to be kind to near misses. It was far too kind:
+1000 km still paid 77%, so a player five times less precise lost only a sixth of
+their points and every run landed in the same band. Three runs in a row scoring
+alike is not a scoring system, it is a formality.
 
-A drop within **250 km** counts as correct: it keeps a streak alive and counts
-towards "n of 10". That is roughly "the right part of the right country", and it
-is generous on purpose — this mode asks whether you know where a place is, not
-whether you can hit a pixel.
+Exponential decay fixes it. 100 km keeps 85%, 500 km keeps 35%, 1000 km keeps
+11%. Modelled over four player profiles, the gap between a careful run and a
+rough one went from 1.2x to 4x.
+
+**Past 1500 km the points go negative**, ramping to -100 at twice that distance.
+A wild guess should cost something, or guessing is free and thinking is
+optional. Placing nothing at all costs the full -100: running the clock down is
+worse than a bad guess, because it is not an attempt.
+
+The penalty deliberately ignores the streak multiplier. A player on a good run
+should not be punished harder for one bad question than a player having a bad
+one.
+
+A drop within **250 km** still counts as on target: it keeps a streak alive and
+feeds the "n of 10 on target" count.
 
 A perfect instant drop on a maxed streak is worth 400, exactly like a perfect
 instant naming answer. Neither mode looks inflated beside the other, even though
 the boards are kept apart.
+
+### Two summaries, because they are two games
+
+The results screen said "8 of 10 answered · best streak 5" in both modes. In
+placing that is simply wrong: you answered all ten, and eight was the number of
+drops within 250 km. Worse, the statistic that actually describes a placing run
+— how far off you were — appeared nowhere.
+
+Placing now leads with it: **"average error 499 km · 4 / 10 on target · best
+streak 3"**. Timeouts are left out of the average rather than counted as some
+invented huge distance, which would swamp it with a number the player never
+chose.
 
 **The leaderboards are separate.** Naming and placing are different skills on
 different curves; one board mixing them would rank nobody meaningfully. The

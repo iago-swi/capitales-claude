@@ -2,7 +2,13 @@
   import { onMount } from 'svelte';
   import type { Topology } from 'topojson-specification';
   import { buildAtlas, fitCountry } from '@capitales/geo';
-  import { isCorrect, t, type MessageKey, type Mode } from '@capitales/core';
+  import {
+    averageOffKm,
+    isCorrect,
+    t,
+    type MessageKey,
+    type Mode,
+  } from '@capitales/core';
   import {
     AnswerButton,
     CountryMap,
@@ -54,6 +60,7 @@
   }
 
   let placing = $derived(game.state.mode === 'place');
+  let averageOff = $derived(averageOffKm(game.state.answers));
   let revealing = $derived(game.state.phase === 'revealing');
 
   /**
@@ -211,10 +218,26 @@
           <span class="tally-score">{game.state.score}</span>
           <span class="tally-unit">{msg('points')}</span>
         </p>
+        <!--
+          Naming and placing need different summaries. "8 of 10 answered" is
+          naming vocabulary: in placing you answered all ten, and how close you
+          got is the whole story — so that leads, and "on target" says plainly
+          what the count actually counts.
+        -->
         <p class="sub">
-          {game.state.correctCount} / {QUESTION_COUNT}
-          {msg('answered')} · {msg('bestStreak')}
-          {game.state.bestStreak}
+          {#if placing}
+            {#if averageOff !== null}
+              {msg('averageOff')} <strong>{Math.round(averageOff)}</strong>
+              {msg('km')} ·
+            {/if}
+            {game.state.correctCount} / {QUESTION_COUNT}
+            {msg('onTarget')} · {msg('bestStreak')}
+            {game.state.bestStreak}
+          {:else}
+            {game.state.correctCount} / {QUESTION_COUNT}
+            {msg('answered')} · {msg('bestStreak')}
+            {game.state.bestStreak}
+          {/if}
         </p>
 
         {#if game.state.error}

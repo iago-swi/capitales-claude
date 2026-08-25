@@ -427,25 +427,52 @@ rangée du même contrôle, ou elles n'arrivent pas.
 ### Le score d'un placement
 
 ```
-distance      = haversine(repère, capitale)         kilomètres orthodromiques
-précision     = racine(1 - distance / 2500)         nulle au-delà de 2500 km
-points        = arrondi((100 + bonusVitesse) × précision × multiplicateur)
+distance  = haversine(repère, capitale)                kilomètres orthodromiques
+précision = distance <= 25 ? 1 : exp(-(distance - 25) / 450)
+points    = arrondi((100 + bonusVitesse) × précision × multiplicateur)
+          = -arrondi(100 × min(1, (distance - 1500) / 1500))   au-delà de 1500 km
 ```
 
-La courbe n'est volontairement pas linéaire. En linéaire, 250 km — c'est-à-dire
-essentiellement la bonne ville — ne vaudrait que 90 %, ce qui se lit comme une
-punition pour avoir eu raison. La racine carrée reste généreuse sur les quasi-
-réussites et ne fait chuter le score que lorsque la réponse est réellement
-ailleurs.
+**La première version de cette courbe était fausse, et c'est en jouant qu'on l'a
+vu.** Elle utilisait `racine(1 - d/2500)`, choisie pour être clémente sur les
+quasi-réussites. Elle l'était beaucoup trop : 1000 km payaient encore 77 %, donc
+un joueur cinq fois moins précis ne perdait qu'un sixième de ses points et
+toutes les parties tombaient dans la même bande. Trois parties d'affilée au même
+score, ce n'est pas un barème, c'est une formalité.
 
-Un repère posé à moins de **250 km** compte comme correct : il maintient la série
-et compte dans le « n sur 10 ». C'est en gros « la bonne région du bon pays », et
-c'est généreux exprès — ce mode demande si vous savez *où* est un lieu, pas si
-vous savez viser un pixel.
+La décroissance exponentielle corrige ça. 100 km gardent 85 %, 500 km gardent
+35 %, 1000 km gardent 11 %. Modélisé sur quatre profils de joueur, l'écart entre
+une partie soignée et une partie approximative passe de 1,2× à 4×.
+
+**Au-delà de 1500 km les points deviennent négatifs**, jusqu'à -100 au double de
+cette distance. Un tir au hasard doit coûter quelque chose, sinon deviner est
+gratuit et réfléchir devient facultatif. Ne rien poser du tout coûte le -100
+plein : laisser filer le chrono est pire qu'une mauvaise réponse, parce que ce
+n'est pas une tentative.
+
+La pénalité ignore volontairement le multiplicateur de série. Un joueur en bonne
+série ne doit pas être puni plus durement pour une mauvaise question qu'un
+joueur en mauvaise passe.
+
+Un repère à moins de **250 km** compte toujours comme dans la cible : il maintient
+la série et alimente le décompte « n sur 10 dans la cible ».
 
 Un placement parfait et instantané sur série maximale vaut 400, exactement comme
 une bonne réponse instantanée en mode nommer. Aucun des deux modes ne paraît
 gonflé à côté de l'autre, alors même que les classements sont séparés.
+
+### Deux résumés, parce que ce sont deux jeux
+
+L'écran de résultats affichait « 8 / 10 répondu · meilleure série 5 » dans les
+deux modes. En mode placer c'est simplement faux : vous avez répondu aux dix
+questions, et huit était le nombre de repères posés à moins de 250 km. Pire, la
+statistique qui décrit réellement une partie de placement — l'écart — n'était
+affichée nulle part.
+
+Le mode placer commence désormais par elle : **« écart moyen 499 km · 4 / 10 dans
+la cible · meilleure série 3 »**. Les dépassements de temps sont exclus de la
+moyenne plutôt que comptés comme une distance énorme inventée, qui la noierait
+sous un chiffre que le joueur n'a jamais choisi.
 
 **Les classements sont distincts.** Nommer et placer sont deux compétences sur
 deux courbes ; un classement mélangeant les deux ne classerait personne. La table

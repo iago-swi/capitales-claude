@@ -65,7 +65,9 @@ export type MessageKey =
   | 'bullseye'
   | 'missed'
   | 'km'
-  | 'questionMark';
+  | 'questionMark'
+  | 'averageOff'
+  | 'onTarget';
 
 export const MESSAGES: Localized<Record<MessageKey, string>> = {
   en: {
@@ -126,6 +128,8 @@ export const MESSAGES: Localized<Record<MessageKey, string>> = {
     missed: 'Nothing placed',
     km: 'km',
     questionMark: '?',
+    averageOff: 'average error',
+    onTarget: 'on target',
   },
   fr: {
     loading: 'Chargement…',
@@ -185,6 +189,8 @@ export const MESSAGES: Localized<Record<MessageKey, string>> = {
     missed: 'Aucun repère posé',
     km: 'km',
     questionMark: ' ?',
+    averageOff: 'écart moyen',
+    onTarget: 'dans la cible',
   },
 };
 
