@@ -25,7 +25,7 @@ Then two terminals:
 
     npm run build:single     # -> apps/single/dist/index.html
 
-A single 780 KB HTML file. Double-click it and it opens in whatever browser you
+A single 790 KB HTML file. Double-click it and it opens in whatever browser you
 already have — Windows, Linux, macOS, phone. Scores are kept in that browser's
 localStorage. Small enough to email.
 
@@ -44,8 +44,8 @@ Artifacts land in `apps/desktop/release`:
 | `Capitales-<version>-portable.exe` | Windows, no installation — just run it |
 | `Capitales-<version>-x64.tar.gz` | Linux — extract and run `./capitales` |
 
-`apps/android/release/Capitales-debug.apk` (4.5 MB) is the Android build, and
-`apps/single/dist/index.html` (780 KB) the no-install option, 130× smaller than
+`apps/android/release/Capitales-debug.apk` (4.3 MB) is the Android build, and
+`apps/single/dist/index.html` (790 KB) the no-install option, 130× smaller than
 the desktop installers.
 
 AppImage and `.deb` are configured but need a Linux machine, WSL or Docker;
@@ -57,7 +57,7 @@ first launch, and store their database in `%APPDATA%\Capitales` on Windows or
 
 ## Testing
 
-    npm test           # 160 tests, nothing to start first
+    npm test           # 184 tests, nothing to start first
     npm run typecheck
 
 ## Documentation

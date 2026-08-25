@@ -37,7 +37,7 @@ npm run dev         # the game on http://localhost:5173
 | `npm run dev:desktop` | Builds and launches the Windows app. |
 | `npm run package:win` | Builds the installer into `apps/desktop/release`. |
 | `npm run build:data` | Re-runs the Natural Earth ETL. Rarely needed; outputs are committed. |
-| `npm test` | The whole suite — 160 tests, nothing to start first. |
+| `npm test` | The whole suite — 184 tests, nothing to start first. |
 | `npm run typecheck` | `tsc --noEmit` across every package. |
 
 ---
@@ -511,7 +511,7 @@ run simply goes unsaved. A network failure must never cost you your result.
 
 ## 12. Testing
 
-**160 tests, one `npm test`, nothing to start first.**
+**184 tests, one `npm test`, nothing to start first.**
 
 That last part is a direct benefit of the SQLite choice: the API tests start the
 real server in-process on an ephemeral port against a `:memory:` database and

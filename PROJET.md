@@ -42,7 +42,7 @@ npm run dev         # le jeu sur http://localhost:5173
 | `npm run package:linux` | Linux : archive tar.gz. |
 | `npm run icons` | Régénère les icônes depuis les SVG. |
 | `npm run build:data` | Relance l'ETL Natural Earth (rare, les sorties sont versionnées). |
-| `npm test` | Toute la suite — 160 tests, rien à démarrer avant. |
+| `npm test` | Toute la suite — 184 tests, rien à démarrer avant. |
 | `npm run typecheck` | `tsc --noEmit` sur tous les paquets. |
 
 ---
@@ -556,7 +556,7 @@ d'ordinateur portable.
 
 ## 12. Les tests
 
-**160 tests, un seul `npm test`, rien à démarrer avant.**
+**184 tests, un seul `npm test`, rien à démarrer avant.**
 
 Ce dernier point découle directement du choix de SQLite : les tests d'API
 démarrent le vrai serveur dans le processus, sur un port éphémère, contre une
