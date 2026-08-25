@@ -174,11 +174,11 @@ export function createGame() {
    * their marker, the real one, and the line between them before the map moves
    * on to another country.
    */
-  function place(lonLat: LonLat): void {
+  function place(lonLat: LonLat, radiusKm?: number): void {
     if (state.phase !== 'question') return;
     const at = Date.now();
     const before = state.score;
-    dispatch({ type: 'PLACE', lonLat, now: at });
+    dispatch({ type: 'PLACE', lonLat, now: at, radiusKm });
     lastPoints = state.score - before;
     revealUntil = at + PLACE_REVEAL_MS;
   }

@@ -96,7 +96,9 @@
     if (!fitted) return;
     const lonLat = fitted.unproject(x, y);
     if (!lonLat) return;
-    game.place(lonLat);
+    // The size of the landmass actually on screen decides how forgiving the
+    // scoring is for this question.
+    game.place(lonLat, fitted.radiusKm);
   }
 
   function onKey(event: KeyboardEvent) {

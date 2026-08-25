@@ -461,6 +461,36 @@ Un placement parfait et instantané sur série maximale vaut 400, exactement com
 une bonne réponse instantanée en mode nommer. Aucun des deux modes ne paraît
 gonflé à côté de l'autre, alors même que les classements sont séparés.
 
+### Noté selon la taille du pays
+
+Une distance de décroissance fixe donnait 200 km à 68 % pour le Vatican, dont le
+rayon est d'un kilomètre, et exactement les mêmes 68 % pour la Russie, dont le
+rayon est de 2318. Ce n'est pas une échelle, c'est un hasard : 200 km de Berne,
+c'est avoir manqué la Suisse entière ; 200 km d'Ottawa, c'est une bonne réponse.
+
+La distance de décroissance vient donc du pays. `fitCountry` publie le rayon d'un
+disque de même aire que la masse terrestre **réellement affichée** — le
+regroupement de la capitale, donc la France est mesurée sur la métropole et non
+sur l'étalement atlantique de ses départements — et ce rayon, borné entre 120 et
+900 km, sert d'échelle. La distance « dans la cible » et le seuil de raté
+suivent.
+
+| Pays | Rayon | Échelle | 50 km | 200 km | 600 km | Dans la cible | Raté |
+|---|---|---|---|---|---|---|---|
+| Vatican, Suisse, Belgique | 1–115 km | 120 | 81 % | **23 %** | 1 % | < 120 km | > 480 km |
+| Espagne, France | 400–450 km | ~450 | 95 % | 68 % | 26 % | < 450 km | > 1800 km |
+| Canada, Russie | 1773–2318 km | 900 | 97 % | **82 %** | 53 % | < 900 km | > 3600 km |
+
+Le plancher évite qu'un micro-État exige une précision métrique ; le plafond
+évite qu'un continent rende l'à-peu-près gratuit. Se tromper d'un rayon de pays
+coûte à peu près la même chose partout — pas exactement, car les 25 km de
+tolérance du mille sont une distance fixe, donc proportionnellement plus
+clémente sur une petite échelle.
+
+L'échelle voyage sur l'événement `PLACE` plutôt que d'être cherchée dans `core`.
+L'événement transporte ce que le joueur avait réellement sous les yeux, et
+`packages/core` continue de tout ignorer de la géométrie.
+
 ### Deux résumés, parce que ce sont deux jeux
 
 L'écran de résultats affichait « 8 / 10 répondu · meilleure série 5 » dans les

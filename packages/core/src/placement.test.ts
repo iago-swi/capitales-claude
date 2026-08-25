@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   averageOffKm,
   distanceKm,
-  PLACE_CORRECT_KM,
+  correctDistanceFor,
+  missDistanceFor,
   PLACE_MAX_PENALTY,
-  PLACE_MISS_KM,
+  scaleFor,
+  isCloseEnough,
   placementAccuracy,
   placementPenalty,
   scorePlacement,
@@ -84,18 +86,18 @@ describe('placementAccuracy', () => {
 describe('placementPenalty', () => {
   it('is nothing at or inside the miss distance', () => {
     expect(placementPenalty(0)).toBe(0);
-    expect(placementPenalty(PLACE_MISS_KM)).toBe(0);
+    expect(placementPenalty(missDistanceFor())).toBe(0);
   });
 
   it('ramps rather than falling off a cliff', () => {
-    const just = placementPenalty(PLACE_MISS_KM + 50);
+    const just = placementPenalty(missDistanceFor() + 50);
     expect(just).toBeLessThan(0);
     expect(just).toBeGreaterThan(-15);
   });
 
   it('reaches the full penalty at twice the miss distance', () => {
-    expect(placementPenalty(PLACE_MISS_KM * 2)).toBe(-PLACE_MAX_PENALTY);
-    expect(placementPenalty(PLACE_MISS_KM * 9)).toBe(-PLACE_MAX_PENALTY);
+    expect(placementPenalty(missDistanceFor() * 2)).toBe(-PLACE_MAX_PENALTY);
+    expect(placementPenalty(missDistanceFor() * 9)).toBe(-PLACE_MAX_PENALTY);
   });
 });
 
@@ -106,7 +108,12 @@ describe('scorePlacement', () => {
   });
 
   it('costs points for a wild guess', () => {
-    expect(scorePlacement(3000, QUESTION_MS, 5)).toBe(-PLACE_MAX_PENALTY);
+    // The penalty ramps, so 3000 km is only part of the way to the worst case
+    // at the default scale; twice the miss distance is where it bottoms out.
+    expect(scorePlacement(3000, QUESTION_MS, 5)).toBeLessThan(-50);
+    expect(scorePlacement(missDistanceFor() * 2, QUESTION_MS, 5)).toBe(
+      -PLACE_MAX_PENALTY,
+    );
   });
 
   it('costs the full penalty for placing nothing at all', () => {
@@ -181,5 +188,60 @@ describe('averageOffKm', () => {
   it('is null when nothing was ever placed', () => {
     expect(averageOffKm([answer(), answer()])).toBeNull();
     expect(averageOffKm([])).toBeNull();
+  });
+});
+
+describe('scaling by country size', () => {
+  // The radii the atlas actually produces for these countries.
+  const SWITZERLAND = 115;
+  const FRANCE = 450;
+  const CANADA = 1773;
+  const VATICAN = 1;
+
+  it('punishes the same error harder in a small country', () => {
+    // The fault this fixes: a fixed scale scored 200 km at 68% for the
+    // Vatican and, identically, for Russia.
+    const inSwitzerland = placementAccuracy(200, SWITZERLAND);
+    const inCanada = placementAccuracy(200, CANADA);
+    expect(inSwitzerland).toBeLessThan(0.35);
+    expect(inCanada).toBeGreaterThan(0.75);
+    expect(inCanada / inSwitzerland).toBeGreaterThan(2.5);
+  });
+
+  it('is nearly the same score for the same error relative to the country', () => {
+    // Out by one country-radius costs about the same wherever you are. Not
+    // exactly: the 25 km bullseye allowance is a fixed distance, so it is
+    // proportionally more generous on a small scale than a large one.
+    const a = placementAccuracy(scaleFor(FRANCE), FRANCE);
+    const b = placementAccuracy(scaleFor(CANADA), CANADA);
+    expect(Math.abs(a - b) / a).toBeLessThan(0.05);
+  });
+
+  it('floors the scale so a micro-state does not demand metre precision', () => {
+    expect(scaleFor(VATICAN)).toBe(120);
+    expect(placementAccuracy(20, VATICAN)).toBe(1);
+  });
+
+  it('caps the scale so a huge country does not make sloppiness free', () => {
+    expect(scaleFor(CANADA)).toBe(900);
+    expect(scaleFor(9999)).toBe(900);
+  });
+
+  it('moves the on-target and miss distances with the country', () => {
+    expect(correctDistanceFor(SWITZERLAND)).toBeLessThan(correctDistanceFor(CANADA));
+    expect(missDistanceFor(SWITZERLAND)).toBeLessThan(missDistanceFor(CANADA));
+    // 200 km from Bern is not on target; from Ottawa it is.
+    expect(isCloseEnough(200, SWITZERLAND)).toBe(false);
+    expect(isCloseEnough(200, CANADA)).toBe(true);
+  });
+
+  it('falls back to a sensible scale when no size is given', () => {
+    expect(scaleFor(undefined)).toBe(450);
+    expect(scaleFor(Number.NaN)).toBe(450);
+  });
+
+  it('penalises a wild guess sooner in a small country', () => {
+    expect(scorePlacement(900, QUESTION_MS, 3, SWITZERLAND)).toBeLessThan(0);
+    expect(scorePlacement(900, QUESTION_MS, 3, CANADA)).toBeGreaterThan(0);
   });
 });

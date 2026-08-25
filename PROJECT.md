@@ -429,6 +429,34 @@ A perfect instant drop on a maxed streak is worth 400, exactly like a perfect
 instant naming answer. Neither mode looks inflated beside the other, even though
 the boards are kept apart.
 
+### Scored against the country's own size
+
+A fixed decay distance scored 200 km at 68% for the Vatican, whose radius is one
+kilometre, and at exactly the same 68% for Russia, whose radius is 2318. That is
+not a scale, it is an accident: 200 km from Bern means you missed Switzerland
+entirely, while 200 km from Ottawa is a good guess.
+
+So the decay distance comes from the country. `fitCountry` reports the radius of
+a disc with the same area as the landmass **actually on screen** — the capital's
+cluster, so France is sized by metropolitan France and not by the Atlantic
+spread of its departments — and that radius, clamped to 120–900 km, is the
+scale. The on-target distance and the miss threshold move with it too.
+
+| Country | Radius | Scale | 50 km | 200 km | 600 km | On target | Miss |
+|---|---|---|---|---|---|---|---|
+| Vatican, Switzerland, Belgium | 1–115 km | 120 | 81% | **23%** | 1% | < 120 km | > 480 km |
+| Spain, France | 400–450 km | ~450 | 95% | 68% | 26% | < 450 km | > 1800 km |
+| Canada, Russia | 1773–2318 km | 900 | 97% | **82%** | 53% | < 900 km | > 3600 km |
+
+The floor stops a micro-state demanding metre precision; the ceiling stops a
+continent making sloppiness free. Being out by one country-radius costs about
+the same wherever you are — not exactly, because the 25 km bullseye allowance is
+a fixed distance and so is proportionally kinder on a small scale.
+
+The scale travels on the `PLACE` event rather than being looked up in `core`.
+The event carries what the player was actually looking at, and `packages/core`
+still knows nothing about geometry.
+
 ### Two summaries, because they are two games
 
 The results screen said "8 of 10 answered · best streak 5" in both modes. In

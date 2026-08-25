@@ -8,22 +8,49 @@ const DEG = Math.PI / 180;
 export const PLACE_FULL_KM = 25;
 
 /**
- * How fast the points fall away, in kilometres.
+ * Bounds on how fast the points fall away, in kilometres.
  *
- * This is the constant that decides whether the mode discriminates at all.
- * The first version used sqrt(1 - d/2500), chosen to be kind to near misses —
- * and it was far too kind: 1000 km still paid 77%, so a player five times less
- * precise lost only a sixth of their points and every run landed in the same
- * band. Exponential decay separates them properly: 4x between a careful run
- * and a rough one.
+ * The rate itself comes from the country: see `scaleFor`. A fixed rate scored
+ * 200 km at 68% for the Vatican, whose radius is one kilometre, and at the same
+ * 68% for Russia, whose radius is 2318 — which is not a scale, it is an
+ * accident.
+ *
+ * The floor stops a micro-state demanding sub-kilometre precision; the ceiling
+ * stops a continent-sized country making sloppiness free.
  */
-export const PLACE_SCALE_KM = 450;
+export const PLACE_MIN_SCALE_KM = 120;
+export const PLACE_MAX_SCALE_KM = 900;
 
-/** Within this, the drop keeps a streak alive and counts as on target. */
-export const PLACE_CORRECT_KM = 250;
+/** Fallback when the caller has no size to offer — roughly a France. */
+export const PLACE_DEFAULT_SCALE_KM = 450;
+
+/** A drop this many scales out has stopped being an attempt. */
+export const PLACE_MISS_SCALES = 4;
+
+/**
+ * The decay distance for one country, from the radius of the landmass drawn on
+ * screen.
+ *
+ * Scoring relative to the country's own size is what makes the two situations
+ * comparable: being out by the country's radius costs the same everywhere,
+ * whether that radius is 100 km or 1000.
+ */
+export function scaleFor(radiusKm?: number): number {
+  if (radiusKm === undefined || !Number.isFinite(radiusKm)) {
+    return PLACE_DEFAULT_SCALE_KM;
+  }
+  return clamp(radiusKm, PLACE_MIN_SCALE_KM, PLACE_MAX_SCALE_KM);
+}
+
+/** Within one scale of the capital counts as on target and keeps a streak. */
+export function correctDistanceFor(radiusKm?: number): number {
+  return scaleFor(radiusKm);
+}
 
 /** Past this, a drop stops being an attempt and starts costing points. */
-export const PLACE_MISS_KM = 1500;
+export function missDistanceFor(radiusKm?: number): number {
+  return scaleFor(radiusKm) * PLACE_MISS_SCALES;
+}
 
 /** The worst a single drop can cost, reached at twice the miss distance. */
 export const PLACE_MAX_PENALTY = 100;
@@ -62,10 +89,10 @@ export function distanceKm(a: LonLat, b: LonLat): number {
  * 100 km is a different achievement from knowing its continent, and the curve
  * has to say so. 100 km keeps 85%, 500 km keeps 35%, 1000 km keeps 11%.
  */
-export function placementAccuracy(distance: number): number {
+export function placementAccuracy(distance: number, radiusKm?: number): number {
   const d = Math.max(0, distance);
   if (d <= PLACE_FULL_KM) return 1;
-  return Math.exp(-(d - PLACE_FULL_KM) / PLACE_SCALE_KM);
+  return Math.exp(-(d - PLACE_FULL_KM) / scaleFor(radiusKm));
 }
 
 /**
@@ -78,9 +105,10 @@ export function placementAccuracy(distance: number): number {
  * Deliberately flat with respect to the streak multiplier: a good run should
  * not be punished harder for one bad question than a bad run is.
  */
-export function placementPenalty(distance: number): number {
-  if (distance <= PLACE_MISS_KM) return 0;
-  const over = clamp((distance - PLACE_MISS_KM) / PLACE_MISS_KM, 0, 1);
+export function placementPenalty(distance: number, radiusKm?: number): number {
+  const miss = missDistanceFor(radiusKm);
+  if (distance <= miss) return 0;
+  const over = clamp((distance - miss) / miss, 0, 1);
   return -Math.round(PLACE_MAX_PENALTY * over);
 }
 
@@ -100,22 +128,30 @@ export function scorePlacement(
   distance: number | null,
   remainingMs: number,
   streak: number,
+  radiusKm?: number,
   totalMs: number = QUESTION_MS,
 ): number {
   if (distance === null) return -PLACE_MAX_PENALTY;
-  if (distance > PLACE_MISS_KM) return placementPenalty(distance);
+  if (distance > missDistanceFor(radiusKm)) {
+    return placementPenalty(distance, radiusKm);
+  }
 
   const remaining = clamp(remainingMs, 0, totalMs);
   const speedBonus = (MAX_SPEED_BONUS * remaining) / totalMs;
 
   return Math.round(
-    (BASE_POINTS + speedBonus) * placementAccuracy(distance) * multiplierFor(streak),
+    (BASE_POINTS + speedBonus) *
+      placementAccuracy(distance, radiusKm) *
+      multiplierFor(streak),
   );
 }
 
 /** Whether a drop is close enough to count as on target and keep a streak. */
-export function isCloseEnough(distance: number | null): boolean {
-  return distance !== null && distance <= PLACE_CORRECT_KM;
+export function isCloseEnough(
+  distance: number | null,
+  radiusKm?: number,
+): boolean {
+  return distance !== null && distance <= correctDistanceFor(radiusKm);
 }
 
 /**

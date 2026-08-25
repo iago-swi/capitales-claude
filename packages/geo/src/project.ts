@@ -1,4 +1,5 @@
 import {
+  geoArea,
   geoAzimuthalEqualArea,
   geoCentroid,
   geoContains,
@@ -24,6 +25,16 @@ export interface FittedCountry {
   dotXY: [number, number];
   /** Pixel bounding box of the outline: [[x0, y0], [x1, y1]]. */
   bounds: [[number, number], [number, number]];
+  /**
+   * The radius, in kilometres, of a disc with the same area as the landmass on
+   * screen — one number for "how big is this country".
+   *
+   * Scoring a placement needs it: 200 km from Bern means you missed Switzerland
+   * entirely, while 200 km from Ottawa is a good guess. Measured on the
+   * displayed cluster rather than the whole feature, so France is sized by
+   * metropolitan France and not by the Atlantic spread of its departments.
+   */
+  radiusKm: number;
   /**
    * Turns a pixel position in this frame back into [lon, lat].
    *
@@ -290,6 +301,7 @@ export function fitCountry(
   return {
     pathD,
     dotXY: [dot[0], dot[1]],
+    radiusKm: Math.sqrt((geoArea(shape) * EARTH_RADIUS_KM * EARTH_RADIUS_KM) / Math.PI),
     bounds: [
       [x0, y0],
       [x1, y1],
