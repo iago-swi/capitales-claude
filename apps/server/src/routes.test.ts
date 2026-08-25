@@ -22,6 +22,7 @@ function fixture(code: string, capital: string): CountryRecord {
 function run(overrides: Partial<RunInput> = {}): RunInput {
   return {
     playerName: 'Philippe',
+    mode: 'name',
     score: 2400,
     correctCount: 8,
     bestStreak: 4,

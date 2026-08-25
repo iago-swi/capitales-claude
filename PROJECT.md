@@ -374,6 +374,68 @@ canonical answer and lists alternates that are *also accepted* if chosen:
 
 ---
 
+## 8b. The two modes
+
+`name` is the original 1996 game: pick the capital from four cities. `place`
+shows the country and names its capital, and asks you to put the marker where
+that city is.
+
+**The title screen never became a menu.** Its headline already described the
+mode — "Name the capital." / "One outline. One marker. Four cities." — so the
+selector rewrites those lines rather than adding an explanation beside them.
+The hero previews the mode too: a marker to read in `name`, a bare outline
+waiting for one in `place`. The screen changes; it does not grow.
+
+The selector reuses the language toggle's shape deliberately. Two settings that
+look alike behave alike, and the second one needs no learning. The choice is
+remembered in `localStorage`, so a returning player is one click from playing.
+
+The rule worth keeping: **one primary action and at most one row of choices.**
+Difficulty or regions, if they ever arrive, become a second row of that same
+control or they do not arrive.
+
+### Scoring a placement
+
+```
+distance   = haversine(drop, capital)            great-circle kilometres
+accuracy   = sqrt(1 - distance / 2500)           0 beyond 2500 km
+points     = round((100 + speedBonus) * accuracy * multiplier)
+```
+
+The curve is deliberately not linear. Linear would make 250 km — essentially the
+right city — worth 90%, which reads as a punishment for being right. The square
+root keeps near misses generous and lets the score fall away only once the guess
+is genuinely elsewhere.
+
+A drop within **250 km** counts as correct: it keeps a streak alive and counts
+towards "n of 10". That is roughly "the right part of the right country", and it
+is generous on purpose — this mode asks whether you know where a place is, not
+whether you can hit a pixel.
+
+A perfect instant drop on a maxed streak is worth 400, exactly like a perfect
+instant naming answer. Neither mode looks inflated beside the other, even though
+the boards are kept apart.
+
+**The leaderboards are separate.** Naming and placing are different skills on
+different curves; one board mixing them would rank nobody meaningfully. The
+`runs` table gained a `mode` column and the index leads with it, since the board
+is always asked for one mode at a time.
+
+### Two things this uncovered
+
+`fitCountry` now returns `project` and `unproject` alongside the path. A click
+goes back through **the very projection that drew the outline**, so the guess is
+measured in the space it was made in — the same reason the outline and the
+marker cannot drift apart. A test asserts the round trip for all 193 countries.
+
+Adding the `mode` column also shipped an index over it, and `CREATE TABLE IF NOT
+EXISTS` does nothing to a table that already exists — so on every database
+created by an earlier build, `openDb` threw `SQL logic error` before the server
+could start. Indexes are now applied *after* the missing-column step, and a test
+opens a deliberately old database to prove it. The in-memory databases every
+other test uses always have today's schema, so none of them could ever have
+caught it.
+
 ## 9. The state machine
 
 ```

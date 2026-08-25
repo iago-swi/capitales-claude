@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS countries (
 CREATE TABLE IF NOT EXISTS runs (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   player_name    TEXT NOT NULL,
+  mode           TEXT NOT NULL DEFAULT 'name',
   score          INTEGER NOT NULL,
   correct_count  INTEGER NOT NULL,
   best_streak    INTEGER NOT NULL,
@@ -41,8 +42,25 @@ CREATE TABLE IF NOT EXISTS run_answers (
   chosen    TEXT,
   correct   INTEGER NOT NULL,
   ms        INTEGER NOT NULL,
+  placed_lon REAL,
+  placed_lat REAL,
+  off_km     REAL,
   PRIMARY KEY (run_id, position)
 ) STRICT;
 
-CREATE INDEX IF NOT EXISTS idx_runs_score ON runs (score DESC);
 `;
+
+/**
+ * Indexes, applied separately and *after* any missing columns are added.
+ *
+ * They have to be: an index over `mode` cannot be created on a table that
+ * predates that column, and CREATE TABLE IF NOT EXISTS does nothing to an
+ * existing table. Running these with the tables threw "SQL logic error" on
+ * every database created by an earlier build.
+ */
+export const INDEXES = `
+-- The leaderboard is always asked for one mode at a time, so the index leads
+-- with it; a bare score index would scan the other mode's rows for nothing.
+CREATE INDEX IF NOT EXISTS idx_runs_mode_score ON runs (mode, score DESC);
+`;
+

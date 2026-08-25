@@ -48,7 +48,24 @@ export type MessageKey =
   | 'noBestYet'
   | 'viewScores'
   | 'back'
-  | 'answered';
+  | 'answered'
+  | 'modeName'
+  | 'modePlace'
+  | 'taglineNameB'
+  | 'taglineNameSub'
+  | 'taglinePlaceB'
+  | 'taglinePlaceSub'
+  | 'whereIs'
+  | 'tapToPlace'
+  | 'clickToPlace'
+  | 'confirmPlacement'
+  | 'yourMarker'
+  | 'actualMarker'
+  | 'offBy'
+  | 'bullseye'
+  | 'missed'
+  | 'km'
+  | 'questionMark';
 
 export const MESSAGES: Localized<Record<MessageKey, string>> = {
   en: {
@@ -92,6 +109,23 @@ export const MESSAGES: Localized<Record<MessageKey, string>> = {
     viewScores: 'High scores',
     back: 'Back',
     answered: 'answered',
+    modeName: 'Name',
+    modePlace: 'Place',
+    taglineNameB: 'Name the capital.',
+    taglineNameSub: 'One outline. One marker. Four cities.',
+    taglinePlaceB: 'Find the capital.',
+    taglinePlaceSub: 'One outline. One name. Drop the marker.',
+    whereIs: 'Where is',
+    tapToPlace: 'Tap the map',
+    clickToPlace: 'Click the map',
+    confirmPlacement: 'Drop the marker',
+    yourMarker: 'Your marker',
+    actualMarker: 'Actual',
+    offBy: 'off by',
+    bullseye: 'Bullseye',
+    missed: 'Nothing placed',
+    km: 'km',
+    questionMark: '?',
   },
   fr: {
     loading: 'Chargement…',
@@ -134,6 +168,23 @@ export const MESSAGES: Localized<Record<MessageKey, string>> = {
     viewScores: 'Meilleurs scores',
     back: 'Retour',
     answered: 'répondu',
+    modeName: 'Nommer',
+    modePlace: 'Placer',
+    taglineNameB: 'Nommez la capitale.',
+    taglineNameSub: 'Une silhouette. Un repère. Quatre villes.',
+    taglinePlaceB: 'Trouvez la capitale.',
+    taglinePlaceSub: 'Une silhouette. Un nom. Posez le repère.',
+    whereIs: 'Où se trouve',
+    tapToPlace: 'Touchez la carte',
+    clickToPlace: 'Cliquez sur la carte',
+    confirmPlacement: 'Poser le repère',
+    yourMarker: 'Votre repère',
+    actualMarker: 'Réel',
+    offBy: 'à',
+    bullseye: 'En plein dans le mille',
+    missed: 'Aucun repère posé',
+    km: 'km',
+    questionMark: ' ?',
   },
 };
 

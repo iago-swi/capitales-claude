@@ -4,7 +4,8 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import type { AnswerRecord, RunInput } from '@capitales/core';
+import type { AnswerRecord, Mode, RunInput } from '@capitales/core';
+import { MODES } from '@capitales/core';
 import { countCountries, insertRun, listCountries, topRuns } from './db.js';
 
 export const PORT = 8787;
@@ -131,6 +132,10 @@ function parseRun(body: unknown): RunInput {
   for (const key of ['score', 'correctCount', 'bestStreak', 'questionCount']) {
     if (!isFiniteNumber(b[key])) throw new BadRequest(`${key} must be a number`);
   }
+  const mode = b['mode'];
+  if (typeof mode !== 'string' || !MODES.includes(mode as Mode)) {
+    throw new BadRequest(`mode must be one of: ${MODES.join(', ')}`);
+  }
   const startedAt = b['startedAt'];
   if (typeof startedAt !== 'string') {
     throw new BadRequest('startedAt must be an ISO 8601 string');
@@ -157,16 +162,27 @@ function parseRun(body: unknown): RunInput {
     if (!isFiniteNumber(a['ms'])) {
       throw new BadRequest(`answer ${i}: ms must be a number`);
     }
+    // Placement detail is optional: a naming run never sends it, and a
+    // timeout in placing mode has nothing to send.
+    const placed = a['placed'];
+    const hasPlacement =
+      Array.isArray(placed) &&
+      placed.length === 2 &&
+      placed.every((n) => isFiniteNumber(n));
+
     return {
       code: a['code'],
       chosen: a['chosen'] as string | null,
       correct: a['correct'],
       ms: a['ms'],
+      ...(hasPlacement ? { placed: placed as [number, number] } : {}),
+      ...(isFiniteNumber(a['offKm']) ? { offKm: a['offKm'] } : {}),
     };
   });
 
   return {
     playerName: playerName.slice(0, MAX_NAME_LENGTH),
+    mode: mode as Mode,
     score: b['score'] as number,
     correctCount: b['correctCount'] as number,
     bestStreak: b['bestStreak'] as number,
@@ -174,6 +190,11 @@ function parseRun(body: unknown): RunInput {
     startedAt,
     answers,
   };
+}
+
+/** Unknown or missing ?mode= falls back to the original naming game. */
+function parseMode(raw: string | null): Mode {
+  return MODES.includes(raw as Mode) ? (raw as Mode) : 'name';
 }
 
 /** Clamps ?limit= into something sane. Nonsense falls back to the default. */
@@ -208,7 +229,11 @@ export function createServer(db: DatabaseSync, options: ServerOptions = {}): Ser
             return send(
               res,
               200,
-              topRuns(db, parseLimit(url.searchParams.get('limit'))),
+              topRuns(
+                db,
+                parseLimit(url.searchParams.get('limit')),
+                parseMode(url.searchParams.get('mode')),
+              ),
             );
 
           case 'POST /api/runs': {

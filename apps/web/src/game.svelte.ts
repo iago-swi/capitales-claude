@@ -12,13 +12,18 @@ import {
   type GameEvent,
   type GameState,
   type Lang,
+  type LonLat,
+  type Mode,
   type RunSummary,
 } from '@capitales/core';
 import { loadCountries, saveRun, topScores } from '@capitales/data';
 
 export const QUESTION_COUNT = 10;
 const REVEAL_MS = 1200;
+/** Longer: a placement has a result to read, not just a right answer to see. */
+const PLACE_REVEAL_MS = 2200;
 const LANG_KEY = 'capitales.lang';
+const MODE_KEY = 'capitales.mode';
 
 /** Remembered language, or the browser's if it has never been chosen here. */
 function initialLang(): Lang {
@@ -26,6 +31,13 @@ function initialLang(): Lang {
   const saved = window.localStorage.getItem(LANG_KEY);
   if (saved === 'en' || saved === 'fr') return saved;
   return navigator.language?.toLowerCase().startsWith('fr') ? 'fr' : 'en';
+}
+
+/** Remembered mode, so a returning player is one click from playing. */
+function initialMode(): Mode {
+  if (typeof window === 'undefined') return 'name';
+  const saved = window.localStorage.getItem(MODE_KEY);
+  return saved === 'place' ? 'place' : 'name';
 }
 
 /**
@@ -37,12 +49,15 @@ export function createGame() {
   /** Every language at once, as the API returns it. */
   let records = $state<CountryRecord[]>([]);
   let lang = $state<Lang>(initialLang());
+  let mode = $state<Mode>(initialMode());
   let now = $state(Date.now());
   let leaderboard = $state<RunSummary[]>([]);
   let qualifies = $state(false);
   let boardLoaded = $state(false);
   let playerName = $state('');
   let ambientIndex = $state(Math.floor(Math.random() * 1000));
+  /** What the question just settled was worth, for the placement readout. */
+  let lastPoints = $state(0);
   let startedAt = new Date().toISOString();
 
   /** When the current reveal should end. Set on entering `revealing`. */
@@ -66,7 +81,8 @@ export function createGame() {
     now = Date.now();
     if (state.phase === 'question' && remainingMs(state, now) <= 0) {
       dispatch({ type: 'TIMEOUT', now });
-      revealUntil = now + REVEAL_MS;
+      lastPoints = 0;
+      revealUntil = now + (state.mode === 'place' ? PLACE_REVEAL_MS : REVEAL_MS);
     } else if (state.phase === 'revealing' && now >= revealUntil) {
       const next = dispatch({ type: 'REVEAL_DONE', now });
       if (next.phase === 'finished') void checkHighScore();
@@ -102,6 +118,7 @@ export function createGame() {
     dispatch({
       type: 'LOADED',
       questions: buildRun(pool, QUESTION_COUNT, mulberry32(seed)),
+      mode,
     });
     qualifies = false;
     boardLoaded = false;
@@ -116,7 +133,7 @@ export function createGame() {
   /** Loads the board so the title screen can show a best score. */
   async function refreshBoard(): Promise<void> {
     try {
-      leaderboard = await topScores(LEADERBOARD_SIZE);
+      leaderboard = await topScores(LEADERBOARD_SIZE, mode);
     } catch {
       leaderboard = [];
     }
@@ -131,7 +148,7 @@ export function createGame() {
    */
   async function checkHighScore(): Promise<void> {
     try {
-      leaderboard = await topScores(LEADERBOARD_SIZE);
+      leaderboard = await topScores(LEADERBOARD_SIZE, mode);
       qualifies = qualifiesForLeaderboard(state.score, leaderboard);
     } catch {
       leaderboard = [];
@@ -144,8 +161,26 @@ export function createGame() {
   function pick(optionIndex: number): void {
     if (state.phase !== 'question') return;
     const at = Date.now();
+    const before = state.score;
     dispatch({ type: 'ANSWER', optionIndex, now: at });
+    lastPoints = state.score - before;
     revealUntil = at + REVEAL_MS;
+  }
+
+  /**
+   * Drops the marker in `place` mode.
+   *
+   * The reveal is longer here than in naming: the player needs a moment to see
+   * their marker, the real one, and the line between them before the map moves
+   * on to another country.
+   */
+  function place(lonLat: LonLat): void {
+    if (state.phase !== 'question') return;
+    const at = Date.now();
+    const before = state.score;
+    dispatch({ type: 'PLACE', lonLat, now: at });
+    lastPoints = state.score - before;
+    revealUntil = at + PLACE_REVEAL_MS;
   }
 
   async function submit(): Promise<void> {
@@ -153,6 +188,7 @@ export function createGame() {
     try {
       await saveRun({
         playerName: playerName.trim() || 'Anonymous',
+        mode,
         score: state.score,
         correctCount: state.correctCount,
         bestStreak: state.bestStreak,
@@ -160,7 +196,7 @@ export function createGame() {
         startedAt,
         answers: state.answers,
       });
-      leaderboard = await topScores(LEADERBOARD_SIZE);
+      leaderboard = await topScores(LEADERBOARD_SIZE, mode);
       qualifies = false;
       dispatch({ type: 'SUBMIT_OK' });
     } catch (error) {
@@ -185,6 +221,24 @@ export function createGame() {
    * would change the four options under the player's cursor, and a run scored
    * half in one language and half in another is not one run.
    */
+  /**
+   * Switches mode and deals a fresh run.
+   *
+   * Same reasoning as the language: the two modes are answered differently, so
+   * a run half-played in each is not one run. Only ever called from the title
+   * screen, where nothing is in flight.
+   */
+  function setMode(next: Mode): void {
+    if (next === mode) return;
+    mode = next;
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(MODE_KEY, next);
+    }
+    dispatch({ type: 'RESTART' });
+    if (records.length > 0) deal();
+    void refreshBoard();
+  }
+
   function setLang(next: Lang): void {
     if (next === lang) return;
     lang = next;
@@ -203,6 +257,12 @@ export function createGame() {
     },
     get lang() {
       return lang;
+    },
+    get mode() {
+      return mode;
+    },
+    get lastPoints() {
+      return lastPoints;
     },
     get remaining() {
       return remainingMs(state, now);
@@ -243,8 +303,10 @@ export function createGame() {
     boot,
     startRun,
     pick,
+    place,
     submit,
     restart,
     setLang,
+    setMode,
   };
 }

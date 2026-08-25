@@ -24,6 +24,23 @@ export interface FittedCountry {
   dotXY: [number, number];
   /** Pixel bounding box of the outline: [[x0, y0], [x1, y1]]. */
   bounds: [[number, number], [number, number]];
+  /**
+   * Turns a pixel position in this frame back into [lon, lat].
+   *
+   * The inverse of the projection that drew the outline, so a click on the map
+   * becomes a real coordinate that can be measured against a real capital. It
+   * is the same projection instance, which is why the two can never disagree.
+   *
+   * Returns null for a point that does not correspond to anywhere on the globe
+   * — possible near the edge of an azimuthal projection.
+   */
+  unproject: (x: number, y: number) => LonLat | null;
+  /**
+   * The forward direction, for drawing a coordinate the game already holds —
+   * the player's own marker, replayed from state rather than from the click
+   * that produced it.
+   */
+  project: (lonLat: LonLat) => [number, number] | null;
 }
 
 /**
@@ -277,5 +294,17 @@ export function fitCountry(
       [x0, y0],
       [x1, y1],
     ],
+    project: (lonLat) => {
+      const p = projection(lonLat);
+      if (!p || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) return null;
+      return [p[0], p[1]];
+    },
+    unproject: (x, y) => {
+      const inverted = projection.invert?.([x, y]);
+      if (!inverted) return null;
+      const [lon, lat] = inverted;
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) return null;
+      return [lon, lat];
+    },
   };
 }

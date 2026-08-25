@@ -91,6 +91,7 @@ describe('loadCountries', () => {
 describe('saveRun', () => {
   const run = {
     playerName: 'Philippe',
+    mode: 'name' as const,
     score: 100,
     correctCount: 1,
     bestStreak: 1,

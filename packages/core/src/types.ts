@@ -4,6 +4,18 @@ export type LonLat = [number, number];
 /** The languages the game is playable in. */
 export type Lang = 'en' | 'fr';
 
+/**
+ * How a question is answered.
+ *
+ * `name` is the original 1996 game: pick the capital from four cities.
+ * `place` shows the country and its capital's name, and asks you to put the
+ * marker where the city is. Scores from the two are not comparable, so the
+ * leaderboard is kept per mode.
+ */
+export type Mode = 'name' | 'place';
+
+export const MODES: readonly Mode[] = ['name', 'place'];
+
 export const LANGS: readonly Lang[] = ['en', 'fr'];
 
 /** A value that exists in every supported language. */
@@ -46,11 +58,16 @@ export interface AnswerRecord {
   chosen: string | null;
   correct: boolean;
   ms: number;
+  /** Where the player put the marker, in `place` mode. */
+  placed?: LonLat;
+  /** How far that was from the real capital, in kilometres. */
+  offKm?: number;
 }
 
 /** One finished game, as POSTed to the API. */
 export interface RunInput {
   playerName: string;
+  mode: Mode;
   score: number;
   correctCount: number;
   bestStreak: number;
@@ -64,6 +81,7 @@ export interface RunInput {
 export interface RunSummary {
   id: number;
   playerName: string;
+  mode: Mode;
   score: number;
   correctCount: number;
   bestStreak: number;

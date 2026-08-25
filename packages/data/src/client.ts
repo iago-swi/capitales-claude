@@ -1,4 +1,4 @@
-import type { CountryRecord, RunInput, RunSummary } from '@capitales/core';
+import type { CountryRecord, Mode, RunInput, RunSummary } from '@capitales/core';
 
 /**
  * Relative, so the browser talks to its own origin and Vite's proxy forwards
@@ -99,6 +99,9 @@ export async function saveRun(run: RunInput): Promise<number> {
   return id;
 }
 
-export async function topScores(limit = 10): Promise<RunSummary[]> {
-  return request<RunSummary[]>(`/leaderboard?limit=${limit}`);
+export async function topScores(
+  limit = 10,
+  mode: Mode = 'name',
+): Promise<RunSummary[]> {
+  return request<RunSummary[]>(`/leaderboard?limit=${limit}&mode=${mode}`);
 }

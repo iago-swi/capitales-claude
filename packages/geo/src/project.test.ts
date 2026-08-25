@@ -197,3 +197,48 @@ describe('fitCountry', () => {
     expect(y1).toBeLessThanOrEqual(box.height - 39);
   });
 });
+
+describe('unproject', () => {
+  it('round-trips the capital: pixel back to coordinate', () => {
+    // The dot was produced by projecting Paris; inverting it must return Paris.
+    // If the projection and its inverse ever disagree, placement scoring is
+    // measuring against a phantom.
+    const paris = get('FRA').capitalLonLat;
+    const { dotXY, unproject } = fitCountry(featureFor('FRA'), paris, box);
+    const back = unproject(dotXY[0], dotXY[1]);
+    expect(back).not.toBeNull();
+    expect(back![0]).toBeCloseTo(paris[0], 4);
+    expect(back![1]).toBeCloseTo(paris[1], 4);
+  });
+
+  it('round-trips for every country', () => {
+    const failures: string[] = [];
+    for (const c of countries) {
+      const f = atlas.get(c.code);
+      if (!f) continue;
+      const { dotXY, unproject } = fitCountry(f, c.capitalLonLat, box);
+      const back = unproject(dotXY[0], dotXY[1]);
+      if (!back) {
+        failures.push(`${c.code}: unproject returned null`);
+        continue;
+      }
+      const dLon = Math.abs(back[0] - c.capitalLonLat[0]);
+      const dLat = Math.abs(back[1] - c.capitalLonLat[1]);
+      if (dLon > 0.01 || dLat > 0.01) {
+        failures.push(`${c.code}: off by ${dLon.toFixed(3)}, ${dLat.toFixed(3)}`);
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  it('moves in the expected direction across the frame', () => {
+    // Sanity of orientation: further right is further east, further down is
+    // further south. A sign error here would score every placement mirrored.
+    const { unproject } = fitCountry(featureFor('FRA'), get('FRA').capitalLonLat, box);
+    const centre = unproject(box.width / 2, box.height / 2)!;
+    const right = unproject(box.width / 2 + 60, box.height / 2)!;
+    const below = unproject(box.width / 2, box.height / 2 + 60)!;
+    expect(right[0]).toBeGreaterThan(centre[0]);
+    expect(below[1]).toBeLessThan(centre[1]);
+  });
+});

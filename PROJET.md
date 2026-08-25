@@ -404,6 +404,70 @@ la réponse canonique et liste les variantes **également acceptées** :
 
 ---
 
+## 8b. Les deux modes
+
+`name` est le jeu de 1996 : choisir la capitale parmi quatre villes. `place`
+montre le pays, nomme sa capitale, et demande de poser le repère là où se trouve
+cette ville.
+
+**L'écran-titre n'est pas devenu un menu.** Son titre décrivait déjà le mode —
+« Nommez la capitale. » / « Une silhouette. Un repère. Quatre villes. » — donc le
+sélecteur réécrit ces lignes au lieu d'ajouter une explication à côté. L'aperçu
+enseigne le mode aussi : un repère à lire en `name`, une silhouette qui en
+attend un en `place`. L'écran change, il ne grossit pas.
+
+Le sélecteur reprend délibérément la forme de celui de la langue. Deux réglages
+qui se ressemblent se comportent pareil, et le second ne s'apprend pas. Le choix
+est mémorisé dans `localStorage` : au retour, un seul clic sépare du jeu.
+
+La règle à conserver : **une action principale et au plus une rangée de choix.**
+La difficulté ou les régions, si elles arrivent un jour, deviennent une seconde
+rangée du même contrôle, ou elles n'arrivent pas.
+
+### Le score d'un placement
+
+```
+distance      = haversine(repère, capitale)         kilomètres orthodromiques
+précision     = racine(1 - distance / 2500)         nulle au-delà de 2500 km
+points        = arrondi((100 + bonusVitesse) × précision × multiplicateur)
+```
+
+La courbe n'est volontairement pas linéaire. En linéaire, 250 km — c'est-à-dire
+essentiellement la bonne ville — ne vaudrait que 90 %, ce qui se lit comme une
+punition pour avoir eu raison. La racine carrée reste généreuse sur les quasi-
+réussites et ne fait chuter le score que lorsque la réponse est réellement
+ailleurs.
+
+Un repère posé à moins de **250 km** compte comme correct : il maintient la série
+et compte dans le « n sur 10 ». C'est en gros « la bonne région du bon pays », et
+c'est généreux exprès — ce mode demande si vous savez *où* est un lieu, pas si
+vous savez viser un pixel.
+
+Un placement parfait et instantané sur série maximale vaut 400, exactement comme
+une bonne réponse instantanée en mode nommer. Aucun des deux modes ne paraît
+gonflé à côté de l'autre, alors même que les classements sont séparés.
+
+**Les classements sont distincts.** Nommer et placer sont deux compétences sur
+deux courbes ; un classement mélangeant les deux ne classerait personne. La table
+`runs` a gagné une colonne `mode`, et l'index commence par elle puisque le
+classement est toujours demandé pour un seul mode à la fois.
+
+### Deux choses que ça a mises au jour
+
+`fitCountry` renvoie désormais `project` et `unproject` à côté du chemin. Un clic
+repasse par **la projection même qui a dessiné la silhouette**, donc la réponse
+est mesurée dans l'espace où elle a été donnée — la même raison qui empêche le
+contour et le repère de se désynchroniser. Un test vérifie l'aller-retour sur
+les 193 pays.
+
+L'ajout de la colonne `mode` embarquait aussi un index sur elle, et
+`CREATE TABLE IF NOT EXISTS` ne fait rien à une table qui existe déjà — donc sur
+toute base créée par une version antérieure, `openDb` levait `SQL logic error`
+avant même que le serveur ne démarre. Les index sont maintenant appliqués
+*après* l'ajout des colonnes manquantes, et un test ouvre une base délibérément
+ancienne pour le prouver. Les bases en mémoire qu'utilisent tous les autres
+tests ont toujours le schéma du jour : aucun d'eux ne pouvait attraper ça.
+
 ## 9. La machine à états
 
 ```

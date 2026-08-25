@@ -2,11 +2,13 @@
   import { onMount } from 'svelte';
   import type { Topology } from 'topojson-specification';
   import { buildAtlas, fitCountry } from '@capitales/geo';
-  import { isCorrect, t, type MessageKey } from '@capitales/core';
+  import { isCorrect, t, type MessageKey, type Mode } from '@capitales/core';
   import {
     AnswerButton,
     CountryMap,
     LanguageToggle,
+    ModeToggle,
+    PlacementResult,
     Scoreboard,
     Timer,
     Wordmark,
@@ -21,6 +23,9 @@
   const game = createGame();
 
   let msg = $derived((key: MessageKey) => t(game.lang, key));
+  let modeLabel = $derived((m: Mode) =>
+    m === 'place' ? msg('modePlace') : msg('modeName'),
+  );
   let question = $derived(game.state.questions[game.state.index]);
 
   let fitted = $derived.by(() => {
@@ -48,6 +53,22 @@
     return `${Math.abs(lat).toFixed(2)}°${ns} · ${Math.abs(lon).toFixed(2)}°${ew}`;
   }
 
+  let placing = $derived(game.state.mode === 'place');
+  let revealing = $derived(game.state.phase === 'revealing');
+
+  /**
+   * The player's marker in pixels.
+   *
+   * Re-projected from the stored coordinate rather than kept as the click
+   * position, so it stays correct if the frame is ever resized between the drop
+   * and the reveal.
+   */
+  let guessXY = $derived.by(() => {
+    const placed = game.state.placed;
+    if (!fitted || !placed) return null;
+    return fitted.project(placed);
+  });
+
   function optionState(i: number): 'idle' | 'correct' | 'wrong' | 'muted' {
     if (game.state.phase !== 'revealing' || !question) return 'idle';
     if (isCorrect(question, question.options[i] ?? '')) return 'correct';
@@ -55,12 +76,28 @@
     return 'muted';
   }
 
+  /** Is this a touch device? Only used to word the hint correctly. */
+  let coarse = $state(false);
+
+  /**
+   * Turns a click on the map into a coordinate and settles the question.
+   *
+   * The pixel goes back through the very projection that drew the outline, so
+   * the guess is measured in the same space it was made in.
+   */
+  function dropMarker(x: number, y: number): void {
+    if (!fitted) return;
+    const lonLat = fitted.unproject(x, y);
+    if (!lonLat) return;
+    game.place(lonLat);
+  }
+
   function onKey(event: KeyboardEvent) {
     if (game.state.phase === 'ready' && event.key === 'Enter') {
       game.startRun();
       return;
     }
-    if (game.state.phase !== 'question') return;
+    if (game.state.phase !== 'question' || placing) return;
     // Both the printed letter and its position on the number row.
     const letter = 'abcd'.indexOf(event.key.toLowerCase());
     const digit = Number(event.key) - 1;
@@ -75,6 +112,7 @@
   );
 
   onMount(() => {
+    coarse = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
     void game.boot();
     // Slowly leaf through the atlas behind the title screen.
     const rotate = setInterval(() => {
@@ -124,12 +162,15 @@
       <section class="title">
         <div class="hero" aria-hidden="true">
           {#if hero}
+            <!-- The preview teaches the mode: a marker to read, or an
+                 outline waiting for one. -->
             <CountryMap
               pathD={hero.pathD}
               dotXY={hero.dotXY}
               width={HERO.width}
               height={HERO.height}
               quiet
+              hideMarker={placing}
             />
           {/if}
         </div>
@@ -141,10 +182,20 @@
 
         <h1>
           <span class="line-a">{msg('taglineA')}</span>
-          <span class="line-b">{msg('taglineB')}</span>
+          <span class="line-b">
+            {placing ? msg('taglinePlaceB') : msg('taglineNameB')}
+          </span>
         </h1>
 
-        <p class="sub">{msg('taglineSub')}</p>
+        <p class="sub">
+          {placing ? msg('taglinePlaceSub') : msg('taglineNameSub')}
+        </p>
+
+        <ModeToggle
+          mode={game.mode}
+          label={modeLabel}
+          onchange={(m) => game.setMode(m)}
+        />
 
         <button class="cta" onclick={() => game.startRun()}>
           {msg('beginRun')}
@@ -231,7 +282,8 @@
       <section class="survey">
         <div class="chart-pane">
           <span class="coord mono">
-            {readout(question.country.capitalLonLat)}
+            <!-- In placing mode this would simply be the answer. -->
+            {placing && !revealing ? '' : readout(question.country.capitalLonLat)}
           </span>
           <div class="chart-holder">
             <CountryMap
@@ -239,6 +291,12 @@
               dotXY={fitted.dotXY}
               width={BOX.width}
               height={BOX.height}
+              hideMarker={placing}
+              guessXY={placing ? guessXY : null}
+              revealed={revealing}
+              onpick={placing && game.state.phase === 'question'
+                ? dropMarker
+                : undefined}
             />
           </div>
           <span class="caption mono">
@@ -249,21 +307,54 @@
 
         <div class="ask">
           <p class="eyebrow mono">{msg('identifyMarker')}</p>
-          <h2>{msg('whichCapital')}</h2>
 
-          <!-- Directly above the options: the eye is already here, choosing. -->
+          {#if placing}
+            <h2 class="target">
+              {msg('whereIs')}
+              <span class="city">{question.country.capital}</span
+              >{msg('questionMark')}
+            </h2>
+          {:else}
+            <h2>{msg('whichCapital')}</h2>
+          {/if}
+
+          <!-- Directly above the answers: the eye is already here, choosing. -->
           <Timer remaining={game.remaining} total={game.total} />
 
-          <div class="options">
-            {#each question.options as option, i (option)}
-              <AnswerButton
-                label={option}
-                index={i}
-                state={optionState(i)}
-                onpick={(idx) => game.pick(idx)}
-              />
-            {/each}
-          </div>
+          {#if placing}
+            <div class="place-panel">
+              {#if revealing}
+                <PlacementResult
+                  offKm={game.state.placedOffKm}
+                  points={game.lastPoints}
+                  labels={{
+                    offBy: msg('offBy'),
+                    km: msg('km'),
+                    bullseye: msg('bullseye'),
+                    missed: msg('missed'),
+                    points: msg('points'),
+                  }}
+                />
+                <p class="legend mono">
+                  <span class="key guess"></span>{msg('yourMarker')}
+                  <span class="key truth"></span>{msg('actualMarker')}
+                </p>
+              {:else}
+                <p class="hint mono">{coarse ? msg('tapToPlace') : msg('clickToPlace')}</p>
+              {/if}
+            </div>
+          {:else}
+            <div class="options">
+              {#each question.options as option, i (option)}
+                <AnswerButton
+                  label={option}
+                  index={i}
+                  state={optionState(i)}
+                  onpick={(idx) => game.pick(idx)}
+                />
+              {/each}
+            </div>
+          {/if}
         </div>
       </section>
     {/if}
@@ -492,6 +583,55 @@
     flex-direction: column;
     gap: 0.55rem;
     margin-top: 0.35rem;
+  }
+
+  /*
+   * The placing column is deliberately near-empty while the question is live.
+   * The map is the interface; anything else here competes with it for the
+   * attention the player needs on the outline.
+   */
+  .place-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-top: 0.35rem;
+    min-height: 6.5rem;
+  }
+  .hint {
+    margin: 0;
+    color: var(--sage);
+  }
+  .target {
+    font-weight: 400;
+  }
+  .target .city {
+    font-family: var(--serif);
+    font-style: italic;
+    color: var(--brass);
+    font-size: 1.15em;
+  }
+  .legend {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0;
+    flex-wrap: wrap;
+  }
+  .key {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .key + .key {
+    margin-left: 0.8rem;
+  }
+  .key.guess {
+    border: 1.5px solid var(--paper);
+    background: color-mix(in oklab, var(--paper) 12%, transparent);
+  }
+  .key.truth {
+    background: var(--brass);
   }
 
   /* ── Results ───────────────────────────────────────────── */

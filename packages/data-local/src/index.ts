@@ -10,7 +10,7 @@
  * That substitution is only possible because nothing above this layer ever knew
  * a database existed.
  */
-import type { CountryRecord, RunInput, RunSummary } from '@capitales/core';
+import type { CountryRecord, Mode, RunInput, RunSummary } from '@capitales/core';
 import capitals from '@capitales/data/capitals.json';
 
 const STORE_KEY = 'capitales.runs.v1';
@@ -61,6 +61,7 @@ export async function saveRun(run: RunInput): Promise<number> {
   runs.push({
     id,
     playerName: run.playerName,
+    mode: run.mode,
     score: run.score,
     correctCount: run.correctCount,
     bestStreak: run.bestStreak,
@@ -79,12 +80,17 @@ export async function saveRun(run: RunInput): Promise<number> {
   return id;
 }
 
-export async function topScores(limit = 10): Promise<RunSummary[]> {
+export async function topScores(
+  limit = 10,
+  mode: Mode = 'name',
+): Promise<RunSummary[]> {
   return readAll()
+    .filter((r) => (r.mode ?? 'name') === mode)
     .slice(0, Math.max(0, limit))
-    .map(({ id, playerName, score, correctCount, bestStreak, finishedAt }) => ({
+    .map(({ id, playerName, mode: m, score, correctCount, bestStreak, finishedAt }) => ({
       id,
       playerName,
+      mode: m ?? 'name',
       score,
       correctCount,
       bestStreak,

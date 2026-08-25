@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
-import type { CountryRecord, RunInput, RunSummary } from '@capitales/core';
-import { SCHEMA } from './schema.js';
+import type { CountryRecord, Mode, RunInput, RunSummary } from '@capitales/core';
+import { INDEXES, SCHEMA } from './schema.js';
 
 interface CountryRow {
   code: string;
@@ -18,6 +18,7 @@ interface CountryRow {
 interface RunRow {
   id: number;
   player_name: string;
+  mode: Mode;
   score: number;
   correct_count: number;
   best_streak: number;
@@ -37,8 +38,41 @@ export function openDb(file: string): DatabaseSync {
   // an in-memory database, so skip it there.
   if (file !== ':memory:') db.exec('PRAGMA journal_mode = WAL');
 
+  // Order matters: tables, then any column an older database is missing, then
+  // indexes — which may reference exactly those new columns.
   db.exec(SCHEMA);
+  addMissingColumns(db);
+  db.exec(INDEXES);
   return db;
+}
+
+/**
+ * Adds columns that a database created by an older build will not have.
+ *
+ * `CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists, so
+ * a schema change is invisible to anyone with saved scores — and on the desktop
+ * and Android builds those live in the user's own data directory, where
+ * "delete it and re-seed" costs them their leaderboard.
+ *
+ * This is not a migration framework and should not grow into one: it adds a
+ * column with a default and nothing else. Anything that needs data rewritten
+ * deserves a real migration, or the honest instruction to start fresh.
+ */
+function addMissingColumns(db: DatabaseSync): void {
+  const wanted: { table: string; column: string; definition: string }[] = [
+    { table: 'runs', column: 'mode', definition: "TEXT NOT NULL DEFAULT 'name'" },
+    { table: 'run_answers', column: 'placed_lon', definition: 'REAL' },
+    { table: 'run_answers', column: 'placed_lat', definition: 'REAL' },
+    { table: 'run_answers', column: 'off_km', definition: 'REAL' },
+  ];
+
+  for (const { table, column, definition } of wanted) {
+    const columns = db
+      .prepare(`PRAGMA table_info(${table})`)
+      .all() as unknown as { name: string }[];
+    if (columns.some((c) => c.name === column)) continue;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }
 
 /** Runs `work` in a transaction, rolling back if it throws. */
@@ -137,18 +171,20 @@ export function seedCountries(
 export function insertRun(db: DatabaseSync, run: RunInput): number {
   const insertRunRow = db.prepare(
     `INSERT INTO runs
-       (player_name, score, correct_count, best_streak,
+       (player_name, mode, score, correct_count, best_streak,
         question_count, started_at, finished_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const insertAnswer = db.prepare(
-    `INSERT INTO run_answers (run_id, position, code, chosen, correct, ms)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO run_answers
+       (run_id, position, code, chosen, correct, ms, placed_lon, placed_lat, off_km)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
 
   return transaction(db, () => {
     const info = insertRunRow.run(
       run.playerName,
+      run.mode,
       run.score,
       run.correctCount,
       run.bestStreak,
@@ -171,6 +207,9 @@ export function insertRun(db: DatabaseSync, run: RunInput): number {
         // SQLite has no boolean type, and a STRICT table rejects one outright.
         answer.correct ? 1 : 0,
         ms,
+        answer.placed?.[0] ?? null,
+        answer.placed?.[1] ?? null,
+        answer.offKm ?? null,
       );
     });
 
@@ -178,19 +217,31 @@ export function insertRun(db: DatabaseSync, run: RunInput): number {
   });
 }
 
-export function topRuns(db: DatabaseSync, limit: number): RunSummary[] {
+/**
+ * The leaderboard for one mode.
+ *
+ * Naming and placing are different skills scored on different curves, so a
+ * single board mixing them would rank nobody meaningfully.
+ */
+export function topRuns(
+  db: DatabaseSync,
+  limit: number,
+  mode: Mode = 'name',
+): RunSummary[] {
   const rows = db
     .prepare(
-      `SELECT id, player_name, score, correct_count, best_streak, finished_at
+      `SELECT id, player_name, mode, score, correct_count, best_streak, finished_at
          FROM runs
+        WHERE mode = ?
         ORDER BY score DESC, finished_at ASC
         LIMIT ?`,
     )
-    .all(limit) as unknown as RunRow[];
+    .all(mode, limit) as unknown as RunRow[];
 
   return rows.map((r) => ({
     id: r.id,
     playerName: r.player_name,
+    mode: r.mode,
     score: r.score,
     correctCount: r.correct_count,
     bestStreak: r.best_streak,

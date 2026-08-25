@@ -57,6 +57,7 @@ function board(...scores: number[]): RunSummary[] {
     .sort((a, b) => b - a)
     .map((score, i) => ({
       id: i + 1,
+      mode: 'name' as const,
       playerName: `P${i}`,
       score,
       correctCount: 5,

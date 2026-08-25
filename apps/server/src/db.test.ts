@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { DatabaseSync } from 'node:sqlite';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { CountryRecord, RunInput } from '@capitales/core';
 import {
   countCountries,
@@ -23,6 +27,7 @@ function fixture(code: string, capital: string, alt: string[] = []): CountryReco
 function run(overrides: Partial<RunInput> = {}): RunInput {
   return {
     playerName: 'Philippe',
+    mode: 'name',
     score: 2400,
     correctCount: 8,
     bestStreak: 4,
@@ -225,5 +230,81 @@ describe('topRuns', () => {
     });
     expect(typeof top?.id).toBe('number');
     expect(top?.finishedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+});
+
+describe('opening a database made by an older build', () => {
+  /**
+   * Every other test here uses ':memory:', which always gets today's schema —
+   * so none of them ever exercised the upgrade path. Adding `mode` shipped an
+   * index over a column that older databases did not have, and openDb threw
+   * "SQL logic error" on every existing installation. This is that path.
+   */
+  function legacyDbPath(): string {
+    return path.join(
+      mkdtempSync(path.join(tmpdir(), 'capitales-legacy-')),
+      'capitales.db',
+    );
+  }
+
+  function createLegacy(file: string): void {
+    const db = new DatabaseSync(file);
+    db.exec(`
+      CREATE TABLE countries (
+        code TEXT PRIMARY KEY, name_en TEXT NOT NULL, name_fr TEXT NOT NULL,
+        capital_en TEXT NOT NULL, capital_fr TEXT NOT NULL,
+        capital_lon REAL NOT NULL, capital_lat REAL NOT NULL,
+        continent TEXT NOT NULL,
+        alt_capitals_en TEXT NOT NULL DEFAULT '[]',
+        alt_capitals_fr TEXT NOT NULL DEFAULT '[]'
+      ) STRICT;
+      CREATE TABLE runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, player_name TEXT NOT NULL,
+        score INTEGER NOT NULL, correct_count INTEGER NOT NULL,
+        best_streak INTEGER NOT NULL, question_count INTEGER NOT NULL,
+        started_at TEXT NOT NULL, finished_at TEXT NOT NULL
+      ) STRICT;
+      CREATE TABLE run_answers (
+        run_id INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL, code TEXT NOT NULL, chosen TEXT,
+        correct INTEGER NOT NULL, ms INTEGER NOT NULL,
+        PRIMARY KEY (run_id, position)
+      ) STRICT;
+      CREATE INDEX idx_runs_score ON runs (score DESC);
+    `);
+    db.prepare(
+      `INSERT INTO runs (player_name, score, correct_count, best_streak,
+                         question_count, started_at, finished_at)
+       VALUES ('Ancien', 1500, 7, 3, 10, '2026-01-01T00:00:00.000Z',
+               '2026-01-01T00:05:00.000Z')`,
+    ).run();
+    db.close();
+  }
+
+  it('opens without throwing', () => {
+    const file = legacyDbPath();
+    createLegacy(file);
+    expect(() => openDb(file)).not.toThrow();
+  });
+
+  it('keeps the scores that were already there', () => {
+    const file = legacyDbPath();
+    createLegacy(file);
+    const db = openDb(file);
+    const board = topRuns(db, 10, 'name');
+    expect(board).toHaveLength(1);
+    expect(board[0]?.playerName).toBe('Ancien');
+    // A run filed before modes existed was a naming run.
+    expect(board[0]?.mode).toBe('name');
+  });
+
+  it('accepts a placing run afterwards', () => {
+    const file = legacyDbPath();
+    createLegacy(file);
+    const db = openDb(file);
+    insertRun(db, run({ playerName: 'Nouveau', mode: 'place', score: 900 }));
+    expect(topRuns(db, 10, 'place').map((r) => r.playerName)).toEqual(['Nouveau']);
+    // The old run is still on its own board, untouched.
+    expect(topRuns(db, 10, 'name').map((r) => r.playerName)).toEqual(['Ancien']);
   });
 });
