@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { formatPoints } from '@capitales/core';
+
   interface Props {
     /** Distance from the real capital, or null when nothing was placed. */
     offKm: number | null;
@@ -23,13 +25,25 @@
 
   let close = $derived(offKm !== null && onTarget);
 
+  /**
+   * The sign lives in `core` so a test can hold it. The plus used to be
+   * hard-coded here, which was fine while nothing could go below zero — then a
+   * drop past the zero ring started costing points and it printed "+-15".
+   */
+  let signed = $derived(formatPoints(points));
+
   /** Whole kilometres below 100, then rounded — false precision helps nobody. */
   let shown = $derived(
     offKm === null ? '' : offKm < 100 ? Math.round(offKm) : Math.round(offKm / 10) * 10,
   );
 </script>
 
-<div class="result" class:close class:far={offKm !== null && !close}>
+<div
+  class="result"
+  class:close
+  class:far={offKm !== null && !close && points >= 0}
+  class:loss={points < 0}
+>
   {#if offKm === null}
     <span class="verdict mono">{labels.missed}</span>
   {:else if bullseye}
@@ -41,7 +55,7 @@
       {labels.km}
     </span>
   {/if}
-  <span class="points">+{points}</span>
+  <span class="points">{signed}</span>
 </div>
 
 <style>
@@ -77,5 +91,13 @@
   }
   .result.far .points {
     color: var(--warn);
+  }
+  /* Points taken away should not be dressed like points earned. */
+  .result.loss {
+    border-color: var(--alarm);
+    background: color-mix(in oklab, var(--alarm) 14%, transparent);
+  }
+  .result.loss .points {
+    color: var(--alarm);
   }
 </style>

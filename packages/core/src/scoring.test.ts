@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { multiplierFor, QUESTION_MS, scoreAnswer } from './scoring.js';
+import {
+  formatPoints,
+  multiplierFor,
+  QUESTION_MS,
+  scoreAnswer,
+} from './scoring.js';
 
 describe('multiplierFor', () => {
   it('starts at 1 for the first correct answer', () => {
@@ -62,5 +67,24 @@ describe('scoreAnswer', () => {
         expect(Number.isInteger(scoreAnswer(true, ms, streak))).toBe(true);
       }
     }
+  });
+});
+
+describe('formatPoints', () => {
+  it('announces a gain with an explicit plus', () => {
+    expect(formatPoints(15)).toBe('+15');
+    expect(formatPoints(400)).toBe('+400');
+  });
+
+  it('does not put a second sign in front of a loss', () => {
+    // The bug this exists to stop: the markup used to write `+{points}`, so a
+    // drop past the zero ring printed "+-15".
+    expect(formatPoints(-15)).toBe('-15');
+    expect(formatPoints(-100)).toBe('-100');
+  });
+
+  it('writes nothing gained as a plain zero', () => {
+    expect(formatPoints(0)).toBe('0');
+    expect(formatPoints(-0)).toBe('0');
   });
 });

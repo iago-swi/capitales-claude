@@ -68,3 +68,20 @@ export function qualifiesForLeaderboard(
   const lowest = kept[kept.length - 1];
   return lowest === undefined || score > lowest.score;
 }
+
+/**
+ * A points value with its sign, for showing next to a single answer.
+ *
+ * A gain is worth announcing as a gain, so it gets an explicit `+`. A loss
+ * already carries its minus and must not be given a second sign, and nothing
+ * gained is plain `0` rather than a decorated nothing.
+ *
+ * This lives here rather than in the component because that is the only way it
+ * can be tested. The rule used to be a `+` hard-coded in the markup, which was
+ * correct right up until a drop past the zero ring started costing points, and
+ * then quietly printed `+-15`.
+ */
+export function formatPoints(points: number): string {
+  if (points > 0) return `+${points}`;
+  return String(points);
+}
