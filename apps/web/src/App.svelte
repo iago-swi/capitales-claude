@@ -483,6 +483,7 @@
      * gone and the spacers with it.
      */
     grid-template-columns: 1fr;
+    justify-items: center;
     min-height: 1.2rem;
   }
 
@@ -494,27 +495,10 @@
   .best {
     display: flex;
     flex-wrap: wrap;
+    justify-content: center;
     gap: 0 0.4rem;
   }
 
-  /*
-   * Below this the two of them cannot sit side by side without one of them
-   * breaking badly, so they stop trying and stack, centred.
-   */
-  /*
-   * Selectors carry both classes on purpose. A later `.bar` rule inside the
-   * 940px breakpoint sets two columns, and at equal specificity the later rule
-   * wins — so matching only `.foot` here silently lost.
-   */
-  @media (max-width: 560px) {
-    .bar.foot {
-      justify-items: center;
-    }
-
-    .bar.foot .best {
-      justify-content: center;
-    }
-  }
   /* Nothing to show outside the title screen; on a phone that is 30px of air. */
   .foot.empty {
     display: none;
