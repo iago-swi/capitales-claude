@@ -205,7 +205,8 @@
 <svelte:window onkeydown={onKey} />
 
 <div class="frame">
-  <header class="bar">
+  {#if !showCredits}
+    <header class="bar">
     <Wordmark
       label={msg('wordmark')}
       onpress={pressWordmark}
@@ -228,9 +229,10 @@
     {/if}
 
     <LanguageToggle lang={game.lang} onchange={(l) => game.setLang(l)} />
-  </header>
+    </header>
 
-  <div class="rule"></div>
+    <div class="rule"></div>
+  {/if}
 
   <main>
     {#if game.state.phase === 'loading' || game.state.phase === 'idle'}
@@ -241,15 +243,17 @@
         <p class="fault-detail">{game.state.error}</p>
       </div>
 
-      <!-- Credits, behind seven presses on the logo -->
+      <!--
+        Credits, behind seven presses on the logo.
+
+        The chrome is hidden for this one — no wordmark, no language toggle, no
+        footer. A page you have to knock seven times to reach should feel like a
+        different room, and the toggle would be a lie anyway: the captions are
+        French only, because the puns they run on do not survive translation.
+      -->
     {:else if game.state.phase === 'ready' && showCredits}
-      <section class="title board-page">
-        <Credits lang={game.lang} title={msg('credits')} />
-        <div class="board-actions">
-          <button class="ghost" onclick={() => (showCredits = false)}>
-            {msg('back')}
-          </button>
-        </div>
+      <section class="title credits-page">
+        <Credits onback={() => (showCredits = false)} />
       </section>
 
       <!-- High scores, reached from the footer -->
@@ -527,7 +531,10 @@
     {/if}
   </main>
 
-  <footer class="bar foot" class:empty={game.state.phase !== 'ready'}>
+  <footer
+    class="bar foot"
+    class:empty={game.state.phase !== 'ready' || showCredits}
+  >
     {#if game.state.phase === 'ready'}
       <span class="mono best">
         {#if game.bestScore}
@@ -649,6 +656,12 @@
 
   .board-page {
     gap: 1.1rem;
+  }
+
+  /* Nothing above or below it any more, so it carries its own breathing room. */
+  .credits-page {
+    gap: 1.1rem;
+    justify-content: center;
   }
 
   .board-list {

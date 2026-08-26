@@ -48,7 +48,6 @@ export type MessageKey =
   | 'clearList'
   | 'clearListConfirm'
   | 'clearListCancel'
-  | 'credits'
   | 'viewScores'
   | 'back'
   | 'answered'
@@ -113,7 +112,6 @@ export const MESSAGES: Localized<Record<MessageKey, string>> = {
     clearList: 'Clear list',
     clearListConfirm: 'Erase every score? This cannot be undone.',
     clearListCancel: 'Keep them',
-    credits: 'Made by',
     viewScores: 'High scores',
     back: 'Back',
     answered: 'answered',
@@ -177,7 +175,6 @@ export const MESSAGES: Localized<Record<MessageKey, string>> = {
     clearList: 'Effacer la liste',
     clearListConfirm: 'Effacer tous les scores ? C’est irréversible.',
     clearListCancel: 'Les garder',
-    credits: 'Réalisé par',
     viewScores: 'Meilleurs scores',
     back: 'Retour',
     answered: 'répondu',

@@ -8,3 +8,4 @@ export { default as PlacementResult } from './PlacementResult.svelte';
 export { default as Wordmark } from './Wordmark.svelte';
 export { default as Credits } from './Credits.svelte';
 export * from './credits.js';
+export * from './portraits.js';
