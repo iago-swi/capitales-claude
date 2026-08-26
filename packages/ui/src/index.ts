@@ -6,3 +6,5 @@ export { default as LanguageToggle } from './LanguageToggle.svelte';
 export { default as ModeToggle } from './ModeToggle.svelte';
 export { default as PlacementResult } from './PlacementResult.svelte';
 export { default as Wordmark } from './Wordmark.svelte';
+export { default as Credits } from './Credits.svelte';
+export * from './credits.js';

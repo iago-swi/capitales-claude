@@ -5,6 +5,9 @@
   import {
     averageOffKm,
     correctDistanceFor,
+    isUnlocked,
+    nextTapCount,
+    shouldHint,
     isCloseEnough,
     isCorrect,
     PLACE_FULL_KM,
@@ -21,6 +24,7 @@
     Scoreboard,
     Timer,
     Wordmark,
+    Credits,
   } from '@capitales/ui';
   import topo from '../../../packages/data/countries.topo.json';
   import { createGame, QUESTION_COUNT } from './game.svelte.js';
@@ -131,6 +135,34 @@
   }
 
   /**
+   * Seven presses on the logo open the credits.
+   *
+   * A gesture rather than a key sequence, because the game also ships as an
+   * APK and a phone has no keyboard. The counting rule lives in `core` so it
+   * can be tested; all that is kept here is where the run currently stands.
+   */
+  let taps = $state(0);
+  let lastTapAt: number | null = null;
+  let showCredits = $state(false);
+
+  function pressWordmark(): void {
+    // Only from the title. Tapping the header mid-run should not whisk the
+    // player away from a question they are halfway through answering.
+    if (game.state.phase !== 'ready') return;
+
+    const now = Date.now();
+    taps = nextTapCount(taps, now, lastTapAt);
+    lastTapAt = now;
+
+    if (isUnlocked(taps)) {
+      taps = 0;
+      lastTapAt = null;
+      showBoard = false;
+      showCredits = true;
+    }
+  }
+
+  /**
    * The high-score board, reachable from the title rather than only after a
    * run. Local UI state rather than a game phase: which screen you are reading
    * is not part of the rules, and the reducer has enough to do.
@@ -174,7 +206,11 @@
 
 <div class="frame">
   <header class="bar">
-    <Wordmark label={msg('wordmark')} />
+    <Wordmark
+      label={msg('wordmark')}
+      onpress={pressWordmark}
+      stirring={shouldHint(taps)}
+    />
 
     {#if game.state.phase === 'question' || game.state.phase === 'revealing'}
       <span class="counter mono">
@@ -204,6 +240,17 @@
         <p class="mono">{msg('cannotStart')}</p>
         <p class="fault-detail">{game.state.error}</p>
       </div>
+
+      <!-- Credits, behind seven presses on the logo -->
+    {:else if game.state.phase === 'ready' && showCredits}
+      <section class="title board-page">
+        <Credits lang={game.lang} title={msg('credits')} />
+        <div class="board-actions">
+          <button class="ghost" onclick={() => (showCredits = false)}>
+            {msg('back')}
+          </button>
+        </div>
+      </section>
 
       <!-- High scores, reached from the footer -->
     {:else if game.state.phase === 'ready' && showBoard}
@@ -490,7 +537,7 @@
           {msg('noBestYet')}
         {/if}
       </span>
-      {#if !showBoard}
+      {#if !showBoard && !showCredits}
         <button class="foot-link mono" onclick={openBoard}>
           {msg('viewScores')}
         </button>
