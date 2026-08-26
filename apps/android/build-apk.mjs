@@ -12,11 +12,28 @@
  * The system default is left alone.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, copyFileSync, mkdirSync } from 'node:fs';
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  copyFileSync,
+  mkdirSync,
+} from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Read from the workspace rather than written here twice.
+ *
+ * The APK used to ship as `Capitales-debug.apk`, which said how it was built
+ * and not what it was — every other artifact carries its version in its name,
+ * and this one could not be told apart from the one before it.
+ */
+const VERSION = JSON.parse(
+  readFileSync(path.join(HERE, 'package.json'), 'utf8'),
+).version;
 const PROJECT = path.join(HERE, 'android');
 
 /** Gradle 8.14 supports up to Java 24; 17 is the floor for the Android plugin. */
@@ -113,7 +130,8 @@ const built = path.join(
 if (existsSync(built)) {
   const outDir = path.join(HERE, 'release');
   mkdirSync(outDir, { recursive: true });
-  const dest = path.join(outDir, `Capitales-${release ? 'release-unsigned' : 'debug'}.apk`);
+  const suffix = release ? '-unsigned' : '';
+  const dest = path.join(outDir, `Capitales-${VERSION}${suffix}.apk`);
   copyFileSync(built, dest);
   console.log(`\nAPK -> ${path.relative(process.cwd(), dest)}`);
 }

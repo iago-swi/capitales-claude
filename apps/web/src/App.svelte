@@ -573,21 +573,30 @@
    * A link rather than a button in looks: it sits in a line of quiet metadata
    * and a filled control there would shout over the one thing the footer is
    * for. Still a real button, so it is reachable by keyboard.
+   *
+   * The mono values are restated rather than inherited. `.mono` is a global
+   * rule and this one is scoped, so the scoped class wins the cascade — an
+   * earlier `font: inherit` here therefore beat it and dropped the button back
+   * to body type at body size, twice the height of the text beside it.
    */
   .foot-link {
     background: none;
     border: none;
     padding: 0;
-    font: inherit;
-    letter-spacing: inherit;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
     color: var(--brass);
-    text-decoration: underline;
-    text-underline-offset: 3px;
     cursor: pointer;
   }
 
+  /* The colour already marks it as the one thing here you can press, so the
+     underline is held back for hover and focus rather than shown at rest. */
   .foot-link:hover,
   .foot-link:focus-visible {
+    text-decoration: underline;
+    text-underline-offset: 3px;
     color: var(--paper);
   }
 
