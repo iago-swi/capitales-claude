@@ -105,3 +105,18 @@ export async function topScores(
 ): Promise<RunSummary[]> {
   return request<RunSummary[]>(`/leaderboard?limit=${limit}&mode=${mode}`);
 }
+
+/**
+ * Empties one mode's board and returns how many runs were discarded.
+ *
+ * The only call in this client that destroys anything. Scoped to a mode
+ * because naming and placing are separate boards and the player is looking at
+ * one of them.
+ */
+export async function clearScores(mode: Mode = 'name'): Promise<number> {
+  const { cleared } = await request<{ cleared: number }>(
+    `/leaderboard?mode=${mode}`,
+    { method: 'DELETE' },
+  );
+  return cleared;
+}

@@ -6,7 +6,13 @@ import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import type { AnswerRecord, Mode, RunInput } from '@capitales/core';
 import { MODES } from '@capitales/core';
-import { countCountries, insertRun, listCountries, topRuns } from './db.js';
+import {
+  clearRuns,
+  countCountries,
+  insertRun,
+  listCountries,
+  topRuns,
+} from './db.js';
 
 export const PORT = 8787;
 export const HOST = '127.0.0.1';
@@ -207,9 +213,15 @@ function parseLimit(raw: string | null): number {
 /**
  * Builds the server. Not listening yet, so tests can bind an ephemeral port.
  *
- * Note what is absent: there is no PUT, PATCH or DELETE anywhere. That absence
- * IS the append-only guarantee from spec section 5.4, which is why the tests
- * assert it explicitly.
+ * A run, once written, is never rewritten: there is no PUT and no PATCH
+ * anywhere, and no route addresses an individual run. That is the append-only
+ * guarantee from spec section 5.4, and the tests assert it explicitly.
+ *
+ * The one destructive route is `DELETE /api/leaderboard`, which empties a whole
+ * board on purpose because the player asked. It is administration rather than
+ * gameplay, and keeping it whole-board rather than per-run is what keeps the
+ * guarantee meaningful: the game can add to history and the player can discard
+ * all of it, but nothing anywhere can quietly alter one entry.
  */
 export function createServer(db: DatabaseSync, options: ServerOptions = {}): Server {
   return createHttpServer((req, res) => {
@@ -235,6 +247,11 @@ export function createServer(db: DatabaseSync, options: ServerOptions = {}): Ser
                 parseMode(url.searchParams.get('mode')),
               ),
             );
+
+          case 'DELETE /api/leaderboard':
+            return send(res, 200, {
+              cleared: clearRuns(db, parseMode(url.searchParams.get('mode'))),
+            });
 
           case 'POST /api/runs': {
             const run = parseRun(await readJson(req));

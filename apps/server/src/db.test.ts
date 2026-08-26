@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { CountryRecord, RunInput } from '@capitales/core';
 import {
+  clearRuns,
   countCountries,
   insertRun,
   listCountries,
@@ -230,6 +231,48 @@ describe('topRuns', () => {
     });
     expect(typeof top?.id).toBe('number');
     expect(top?.finishedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+});
+
+describe('clearRuns', () => {
+  it('empties the mode asked for and reports how many went', () => {
+    const db = fresh();
+    insertRun(db, run({ score: 100 }));
+    insertRun(db, run({ score: 200 }));
+    expect(clearRuns(db, 'name')).toBe(2);
+    expect(topRuns(db, 10, 'name')).toHaveLength(0);
+  });
+
+  it('leaves the other board alone', () => {
+    // Naming and placing are separate boards and the player is looking at
+    // exactly one of them; taking the other as a side effect would be a shock.
+    const db = fresh();
+    insertRun(db, run({ score: 100, mode: 'name' }));
+    insertRun(db, run({ score: 200, mode: 'place' }));
+    clearRuns(db, 'place');
+    expect(topRuns(db, 10, 'place')).toHaveLength(0);
+    expect(topRuns(db, 10, 'name')).toHaveLength(1);
+  });
+
+  it('reports nothing on a board that is already empty', () => {
+    expect(clearRuns(fresh(), 'name')).toBe(0);
+  });
+
+  it('takes the answers with it', () => {
+    // ON DELETE CASCADE only bites because openDb turns foreign keys on. A
+    // stray answer row here would mean that pragma had gone missing, which no
+    // test above would notice.
+    const db = fresh();
+    const id = insertRun(db, run({ score: 100 }));
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM run_answers WHERE run_id = ?').get(id),
+    ).toEqual({ n: 2 });
+
+    clearRuns(db, 'name');
+
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM run_answers WHERE run_id = ?').get(id),
+    ).toEqual({ n: 0 });
   });
 });
 

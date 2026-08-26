@@ -45,6 +45,9 @@ export type MessageKey =
   | 'capitalLocation'
   | 'bestScore'
   | 'noBestYet'
+  | 'clearList'
+  | 'clearListConfirm'
+  | 'clearListCancel'
   | 'viewScores'
   | 'back'
   | 'answered'
@@ -106,6 +109,9 @@ export const MESSAGES: Localized<Record<MessageKey, string>> = {
     capitalLocation: 'Capital location',
     bestScore: 'Best score',
     noBestYet: 'No survey filed yet',
+    clearList: 'Clear list',
+    clearListConfirm: 'Erase every score? This cannot be undone.',
+    clearListCancel: 'Keep them',
     viewScores: 'High scores',
     back: 'Back',
     answered: 'answered',
@@ -166,6 +172,9 @@ export const MESSAGES: Localized<Record<MessageKey, string>> = {
     capitalLocation: 'Emplacement de la capitale',
     bestScore: 'Meilleur score',
     noBestYet: 'Aucun relevé déposé',
+    clearList: 'Effacer la liste',
+    clearListConfirm: 'Effacer tous les scores ? C’est irréversible.',
+    clearListCancel: 'Les garder',
     viewScores: 'Meilleurs scores',
     back: 'Retour',
     answered: 'répondu',

@@ -97,3 +97,17 @@ export async function topScores(
       finishedAt,
     }));
 }
+
+/**
+ * Empties one mode's board and returns how many runs were discarded.
+ *
+ * The offline twin of the server's `DELETE /api/leaderboard`. Scoped to a mode
+ * for the same reason: naming and placing are separate boards, and clearing
+ * the one you are reading should not quietly take the other with it.
+ */
+export async function clearScores(mode: Mode = 'name'): Promise<number> {
+  const all = readAll();
+  const kept = all.filter((r) => (r.mode ?? 'name') !== mode);
+  writeAll(kept);
+  return all.length - kept.length;
+}

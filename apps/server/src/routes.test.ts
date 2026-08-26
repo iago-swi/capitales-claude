@@ -170,6 +170,10 @@ describe('GET /api/leaderboard', () => {
 describe('the append-only guarantee', () => {
   // Spec section 5.4: with no security-rules layer, "runs cannot be edited"
   // holds only because no such route exists. Assert it rather than assume it.
+  //
+  // The guarantee is narrower than it once was: a whole board can now be
+  // cleared on purpose. What survives, and what these tests pin down, is that
+  // no route can reach in and alter one run.
   it('refuses to update an existing run', async () => {
     const { id } = (await (await post('/api/runs', run())).json()) as { id: number };
     for (const method of ['PUT', 'PATCH']) {
@@ -192,6 +196,40 @@ describe('the append-only guarantee', () => {
   it('refuses to write to countries', async () => {
     const res = await post('/api/countries', fixture('XXX', 'Nowhere'));
     expect(res.status).toBe(404);
+  });
+});
+
+describe('clearing a board', () => {
+  it('empties the mode asked for and reports the count', async () => {
+    await post('/api/runs', run());
+    await post('/api/runs', run());
+
+    const res = await fetch(`${base}/api/leaderboard`, { method: 'DELETE' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ cleared: 2 });
+    expect(await (await fetch(`${base}/api/leaderboard`)).json()).toHaveLength(0);
+  });
+
+  it('leaves the other board alone', async () => {
+    // Naming and placing are separate boards, and the player is looking at
+    // exactly one of them. Wiping the other as a side effect would be a shock.
+    await post('/api/runs', run());
+    await post('/api/runs', { ...run(), mode: 'place' });
+
+    await fetch(`${base}/api/leaderboard?mode=place`, { method: 'DELETE' });
+
+    expect(
+      await (await fetch(`${base}/api/leaderboard?mode=place`)).json(),
+    ).toHaveLength(0);
+    expect(
+      await (await fetch(`${base}/api/leaderboard?mode=name`)).json(),
+    ).toHaveLength(1);
+  });
+
+  it('is harmless on a board that is already empty', async () => {
+    const res = await fetch(`${base}/api/leaderboard`, { method: 'DELETE' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ cleared: 0 });
   });
 });
 

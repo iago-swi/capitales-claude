@@ -42,7 +42,7 @@ npm run dev         # le jeu sur http://localhost:5173
 | `npm run package:linux` | Linux : archive tar.gz. |
 | `npm run icons` | Régénère les icônes depuis les SVG. |
 | `npm run build:data` | Relance l'ETL Natural Earth (rare, les sorties sont versionnées). |
-| `npm test` | Toute la suite — 203 tests, rien à démarrer avant. |
+| `npm test` | Toute la suite — 210 tests, rien à démarrer avant. |
 | `npm run typecheck` | `tsc --noEmit` sur tous les paquets. |
 
 ---
@@ -287,14 +287,30 @@ du CORS.
 
 Le `allow update, delete: if false` de Firestore tenait en quatre lignes
 déclaratives. Ici, la même propriété vient de quelque chose d'invisible : **il
-n'existe aucune route `PUT`, `PATCH` ou `DELETE`.** Un client ne peut pas
-modifier un score passé parce que le verbe n'existe pas.
+n'existe aucune route `PUT` ni `PATCH`, et aucune route ne désigne une partie
+individuelle.** Un client ne peut pas modifier un score passé parce que le verbe
+n'existe pas.
 
 Comme une garantie assurée par du code **absent** ne se voit pas dans un diff,
 les tests vérifient la négative directement : on enregistre une partie, puis on
 tente `PUT` et `DELETE` dessus et on exige un `404`. Une propriété assurée par
 du code manquant a plus besoin d'un test qu'une propriété assurée par du code
 présent.
+
+**La garantie a été resserrée, pas contournée.** Le joueur peut désormais vider
+un classement entier depuis l'écran des meilleurs scores, ce qui a demandé la
+seule route destructrice de l'API : `DELETE /api/leaderboard?mode=…`. Un
+classement que personne ne peut remettre à zéro finit par cesser d'intéresser —
+une partie chanceuse trône au sommet pour toujours.
+
+Ce qui survit, et ce que les tests épinglent, c'est qu'**aucune route ne peut
+atteindre une partie précise pour l'altérer**. Le jeu ajoute à l'historique, le
+joueur peut jeter le tout, et rien nulle part ne peut retoucher une ligne en
+silence. La suppression est cadrée à un seul mode : nommer et placer sont deux
+classements distincts, le joueur en regarde exactement un, et effacer l'autre au
+passage serait une surprise. Les `run_answers` suivent par `ON DELETE CASCADE`,
+qui ne mord que parce que `openDb` active les clés étrangères — un test le
+vérifie sur les lignes elles-mêmes, pas sur ce que raconte la route.
 
 Il n'y a aucune authentification, volontairement. Le serveur n'écoute que sur
 `127.0.0.1` : le seul client est la personne assise devant la machine. Un pseudo
@@ -655,7 +671,7 @@ d'ordinateur portable.
 
 ## 12. Les tests
 
-**203 tests, un seul `npm test`, rien à démarrer avant.**
+**210 tests, un seul `npm test`, rien à démarrer avant.**
 
 Ce dernier point découle directement du choix de SQLite : les tests d'API
 démarrent le vrai serveur dans le processus, sur un port éphémère, contre une
@@ -668,7 +684,7 @@ base vierge gratuitement.
 | `core` | Déterminisme du générateur, génération des questions, bornes du score, le réducteur complet, la localisation, la règle du top 10 |
 | `geo` | Sélection du regroupement, cadrage de la projection, et le garde-fou des coordonnées inversées |
 | `data` | Intégrité de `capitals.json` — nombre, tri, plages de coordonnées, les deux langues, chaque override, la jointure avec la géométrie |
-| `server` | Les quatre points d'entrée, les corps malformés, et la garantie d'ajout seul |
+| `server` | Les cinq points d’entrée, les corps malformés, la garantie d’ajout seul et l’effacement d’un classement |
 
 Le générateur pseudo-aléatoire à graine est ce qui rend tout cela possible : la
 même graine produit les mêmes dix pays, dans le même ordre, avec les mêmes

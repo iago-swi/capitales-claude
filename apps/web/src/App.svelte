@@ -130,6 +130,29 @@
     if (i >= 0 && i < 4) game.pick(i);
   }
 
+  /**
+   * The high-score board, reachable from the title rather than only after a
+   * run. Local UI state rather than a game phase: which screen you are reading
+   * is not part of the rules, and the reducer has enough to do.
+   */
+  let showBoard = $state(false);
+  /** Second press required before anything is erased. */
+  let confirmingClear = $state(false);
+  let clearing = $state(false);
+
+  async function doClear(): Promise<void> {
+    clearing = true;
+    await game.clearBoard();
+    clearing = false;
+    confirmingClear = false;
+  }
+
+  function openBoard(): void {
+    confirmingClear = false;
+    showBoard = true;
+    void game.refreshBoard();
+  }
+
   let isOver = $derived(
     game.state.phase === 'finished' ||
       game.state.phase === 'submitting' ||
@@ -181,6 +204,51 @@
         <p class="mono">{msg('cannotStart')}</p>
         <p class="fault-detail">{game.state.error}</p>
       </div>
+
+      <!-- High scores, reached from the footer -->
+    {:else if game.state.phase === 'ready' && showBoard}
+      <section class="title board-page">
+        <p class="eyebrow mono">{msg('highScores')} · {modeLabel(game.mode)}</p>
+
+        {#if game.leaderboard.length === 0}
+          <p class="mono empty-board">{msg('noScoresYet')}</p>
+        {:else}
+          <ol class="board-list" class:split={game.leaderboard.length > 5}>
+            {#each game.leaderboard as row, i (row.id)}
+              <li>
+                <span class="rank mono">{String(i + 1).padStart(2, '0')}</span>
+                <span class="who">{row.playerName}</span>
+                <span class="pts">{row.score}</span>
+              </li>
+            {/each}
+          </ol>
+        {/if}
+
+        {#if confirmingClear}
+          <!-- Erasing is the one thing here that cannot be taken back, so it
+               costs a second press and says plainly what it does. -->
+          <p class="confirm-ask mono">{msg('clearListConfirm')}</p>
+          <div class="board-actions">
+            <button class="ghost" onclick={() => (confirmingClear = false)}>
+              {msg('clearListCancel')}
+            </button>
+            <button class="danger" disabled={clearing} onclick={doClear}>
+              {msg('clearList')}
+            </button>
+          </div>
+        {:else}
+          <div class="board-actions">
+            <button class="ghost" onclick={() => (showBoard = false)}>
+              {msg('back')}
+            </button>
+            {#if game.leaderboard.length > 0}
+              <button class="ghost" onclick={() => (confirmingClear = true)}>
+                {msg('clearList')}
+              </button>
+            {/if}
+          </div>
+        {/if}
+      </section>
 
       <!-- Title screen -->
     {:else if game.state.phase === 'ready'}
@@ -422,6 +490,11 @@
           {msg('noBestYet')}
         {/if}
       </span>
+      {#if !showBoard}
+        <button class="foot-link mono" onclick={openBoard}>
+          {msg('viewScores')}
+        </button>
+      {/if}
     {/if}
   </footer>
 </div>
@@ -485,6 +558,86 @@
     grid-template-columns: 1fr;
     justify-items: center;
     min-height: 1.2rem;
+  }
+
+  /* Score and link on one centred line, wrapping together if they must. */
+  .bar.foot {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: baseline;
+    gap: 0.35rem 1rem;
+  }
+
+  /*
+   * A link rather than a button in looks: it sits in a line of quiet metadata
+   * and a filled control there would shout over the one thing the footer is
+   * for. Still a real button, so it is reachable by keyboard.
+   */
+  .foot-link {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    letter-spacing: inherit;
+    color: var(--brass);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+
+  .foot-link:hover,
+  .foot-link:focus-visible {
+    color: var(--paper);
+  }
+
+  .board-page {
+    gap: 1.1rem;
+  }
+
+  .board-list {
+    width: min(30rem, 100%);
+    margin: 0 auto;
+  }
+
+  .empty-board {
+    color: var(--dim);
+  }
+
+  .board-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+
+  .confirm-ask {
+    color: var(--alarm);
+    max-width: 28rem;
+    text-wrap: balance;
+  }
+
+  /* Destructive, and dressed like it. */
+  .danger {
+    background: none;
+    border: 1px solid var(--alarm);
+    color: var(--alarm);
+    padding: 0.55rem 1.1rem;
+    font: inherit;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .danger:hover:not(:disabled),
+  .danger:focus-visible {
+    background: var(--alarm);
+    color: var(--abyss);
+  }
+
+  .danger:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 
   /* Keeps "MEILLEUR SCORE" and "1667 · IAGO" each in one piece. */

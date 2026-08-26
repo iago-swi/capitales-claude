@@ -223,6 +223,28 @@ export function insertRun(db: DatabaseSync, run: RunInput): number {
  * Naming and placing are different skills scored on different curves, so a
  * single board mixing them would rank nobody meaningfully.
  */
+/**
+ * Empties one mode's board, returning how many runs went.
+ *
+ * The only destructive operation in the whole API, and it exists because a
+ * board nobody can reset is a board that eventually stops being interesting —
+ * one lucky run in a household game sits at the top for ever.
+ *
+ * Scoped to a single mode. Naming and placing are separate boards and the
+ * player is looking at exactly one of them when they ask for this; wiping the
+ * other one as a side effect would be a surprise.
+ *
+ * `run_answers` goes with it through ON DELETE CASCADE, which is only actually
+ * enforced because `openDb` turns foreign keys on.
+ */
+export function clearRuns(db: DatabaseSync, mode: Mode = 'name'): number {
+  const before = db
+    .prepare('SELECT COUNT(*) AS n FROM runs WHERE mode = ?')
+    .get(mode) as unknown as { n: number };
+  db.prepare('DELETE FROM runs WHERE mode = ?').run(mode);
+  return before.n;
+}
+
 export function topRuns(
   db: DatabaseSync,
   limit: number,

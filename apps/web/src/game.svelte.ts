@@ -16,7 +16,7 @@ import {
   type Mode,
   type RunSummary,
 } from '@capitales/core';
-import { loadCountries, saveRun, topScores } from '@capitales/data';
+import { clearScores, loadCountries, saveRun, topScores } from '@capitales/data';
 
 export const QUESTION_COUNT = 10;
 const REVEAL_MS = 1200;
@@ -158,6 +158,22 @@ export function createGame() {
     }
   }
 
+  /**
+   * Empties the board for the mode being looked at, then reloads it.
+   *
+   * Reloading rather than assuming the delete worked: if the server refused,
+   * the screen should go back to showing what is really there rather than an
+   * empty list the player would believe.
+   */
+  async function clearBoard(): Promise<void> {
+    try {
+      await clearScores(mode);
+    } catch {
+      // Nothing to tell the player beyond what the refreshed board will show.
+    }
+    await refreshBoard();
+  }
+
   function pick(optionIndex: number): void {
     if (state.phase !== 'question') return;
     const at = Date.now();
@@ -270,6 +286,8 @@ export function createGame() {
     get total() {
       return QUESTION_MS;
     },
+    clearBoard,
+    refreshBoard,
     get leaderboard() {
       return leaderboard;
     },

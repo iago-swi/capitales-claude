@@ -37,7 +37,7 @@ npm run dev         # the game on http://localhost:5173
 | `npm run dev:desktop` | Builds and launches the Windows app. |
 | `npm run package:win` | Builds the installer into `apps/desktop/release`. |
 | `npm run build:data` | Re-runs the Natural Earth ETL. Rarely needed; outputs are committed. |
-| `npm test` | The whole suite — 203 tests, nothing to start first. |
+| `npm test` | The whole suite — 210 tests, nothing to start first. |
 | `npm run typecheck` | `tsc --noEmit` across every package. |
 
 ---
@@ -266,14 +266,28 @@ than message, and Vite's dev proxy removes the CORS problem entirely.
 ### The append-only guarantee
 
 Firestore's `allow update, delete: if false` was four declarative lines. Here the
-same property comes from something invisible: **there is no `PUT`, `PATCH` or
-`DELETE` route anywhere.** A client cannot edit a past score because the verb
-doesn't exist.
+same property comes from something invisible: **there is no `PUT` or `PATCH`
+route, and no route addresses an individual run.** A client cannot edit a past
+score because the verb doesn't exist.
 
 Because a guarantee enforced by *absent* code is invisible in a diff, the tests
 assert the negative directly — POST a run, then try to `PUT` and `DELETE` it and
 require `404`. A property enforced by missing code needs a test more than one
 enforced by present code.
+
+**The guarantee was narrowed, not dodged.** The player can now empty a whole
+board from the high-scores screen, which took the API's only destructive route:
+`DELETE /api/leaderboard?mode=…`. A board nobody can reset eventually stops
+being interesting — one lucky run sits at the top for ever.
+
+What survives, and what the tests pin down, is that **no route can reach one run
+and alter it**. The game adds to history, the player can discard all of it, and
+nothing anywhere can quietly retouch a single line. The delete is scoped to one
+mode: naming and placing are separate boards, the player is looking at exactly
+one of them, and wiping the other in passing would be a shock. `run_answers`
+goes with it through `ON DELETE CASCADE`, which only bites because `openDb`
+turns foreign keys on — a test checks the rows themselves rather than what the
+route claims.
 
 There is no authentication, deliberately. The server binds to `127.0.0.1` only,
 so the sole client is the person sitting at the machine. A nickname is stored on
@@ -606,7 +620,7 @@ run simply goes unsaved. A network failure must never cost you your result.
 
 ## 12. Testing
 
-**203 tests, one `npm test`, nothing to start first.**
+**210 tests, one `npm test`, nothing to start first.**
 
 That last part is a direct benefit of the SQLite choice: the API tests start the
 real server in-process on an ephemeral port against a `:memory:` database and
@@ -618,7 +632,7 @@ every test file gets a pristine database for free.
 | `core` | Seeded RNG determinism, question generation, scoring boundaries, the full reducer, localisation, the top-10 rule |
 | `geo` | Cluster selection, projection fitting, and the swapped-coordinate guard |
 | `data` | `capitals.json` integrity — count, sorting, coordinate ranges, both languages, every override, the geometry join |
-| `server` | All four endpoints, malformed bodies, and the append-only guarantee |
+| `server` | All five endpoints, malformed bodies, the append-only guarantee, and clearing a board |
 
 The seeded RNG is what makes this work: the same seed yields the same ten
 countries in the same order with the same option ordering, so *"the quiz is
