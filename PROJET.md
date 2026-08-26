@@ -40,10 +40,39 @@ npm run dev         # le jeu sur http://localhost:5173
 | `npm run dev:desktop` | Construit et lance l'application de bureau. |
 | `npm run package:win` | Windows : installateur **et** exécutable portable. |
 | `npm run package:linux` | Linux : archive tar.gz. |
+| `npm run build:single` | L'application entière dans un `index.html` de 875 Ko. |
+| `npm run package:android` | APK, nommé d'après la version du manifeste. |
 | `npm run icons` | Régénère les icônes depuis les SVG. |
 | `npm run build:data` | Relance l'ETL Natural Earth (rare, les sorties sont versionnées). |
-| `npm test` | Toute la suite — 210 tests, rien à démarrer avant. |
+| `node scripts/build-portraits.mjs` | Réencode les portraits des crédits depuis `assets/portraits/`. |
+| `npm test` | Toute la suite — 231 tests, rien à démarrer avant. |
 | `npm run typecheck` | `tsc --noEmit` sur tous les paquets. |
+| **`npm run verify`** | **Le vrai portail** : typecheck, tests, et les deux compilations. |
+
+### Pourquoi `verify` compile, au lieu de se contenter des tests
+
+`tsc` ne lit pas les blocs `<script>` des fichiers `.svelte`. Le vérificateur
+officiel, `svelte-check`, refuse TypeScript 7 dès son démarrage — pas seulement à
+l'installation, et pas contournable par `--legacy-peer-deps`. **Le bundler est
+donc la seule chose qui type-vérifie les composants**, et il a effectivement
+attrapé un import mort qui aurait sinon fini dans une livraison.
+
+D'où `verify`, qui enchaîne les quatre étapes. C'est ce qu'il faut lancer avant
+de compiler quoi que ce soit, et ce qui a attrapé la moitié des fautes de cette
+session.
+
+Ce fossé a coûté trois bugs, tous invisibles à `tsc` et aux tests :
+
+| Symptôme | Cause | Ce qui l'a rattrapé |
+|---|---|---|
+| Compilation cassée, `MISSING_EXPORT` | Un composant importait une constante supprimée | `build:single` |
+| Une perte affichée `+-15` | Un `+` écrit en dur dans le balisage | Un joueur |
+| Un lien deux fois trop gros | `font: inherit` écrasant `.mono` | Un joueur |
+
+La parade adoptée est de **sortir la règle du composant** dès qu'elle est
+testable : `formatPoints` vit dans `core` avec ses tests, la logique des sept
+appuis aussi. Ce qui reste dans un `.svelte` est du balisage et du CSS, et le
+CSS scopé n'est toujours couvert par rien.
 
 ---
 
@@ -669,9 +698,87 @@ d'ordinateur portable.
 
 ---
 
+## 11b. L'easter egg
+
+Sept appuis sur le logo, à moins de deux secondes d'intervalle, ouvrent un écran
+de crédits : trois visages, ce que chacun a fait, et la sortie.
+
+### Pourquoi un geste et pas le code Konami
+
+Le réflexe naturel est éliminé d'office : **l'APK n'a pas de clavier.** Un appui
+est la seule entrée qu'une souris, un doigt et un stylet produisent à
+l'identique, donc sept appuis donnent un seul chemin de code pour les cinq
+versions au lieu d'un par périphérique. C'est aussi l'idiome qu'Android emploie
+pour son numéro de build, ce qui laisse une chance de le trouver à qui cherche.
+
+La règle de comptage vit dans `packages/core/src/easter.ts`, avec ses tests. Un
+appui arrivé après l'expiration de la fenêtre **repart à un** plutôt que de ne
+rien faire : un joueur hésitant recommence au lieu d'être puni en silence. Un
+test parcourt quarante appuis étalés sur une session pour prouver qu'un clic
+distrait sur le logo ne peut jamais s'additionner jusqu'au secret.
+
+Le seul indice arrive au quatrième appui : le point en laiton du logo élargit son
+halo. Assez pour que celui qui appuie déjà sache qu'il est entendu, rien du tout
+pour celui qui a appuyé une fois.
+
+**Le logo ne devient pas un bouton.** Il n'apporte rien à quelqu'un au clavier, et
+un arrêt de tabulation muet dans l'en-tête ferait payer tous les visiteurs pour
+cacher une blague à la plupart d'entre eux. Le déclencheur est aussi inerte hors
+de l'écran d'accueil : taper l'en-tête au milieu d'une question ne doit pas
+arracher le joueur à sa carte.
+
+### Une pièce à part
+
+L'écran masque tout l'habillage — logo, sélecteur de langue, filet, pied de page.
+Une page qu'il faut frapper sept fois pour atteindre doit ressembler à une autre
+pièce, pas à la même avec un panneau échangé. Il ne reste qu'un visage, ce que la
+personne a fait, trois pastilles et la sortie — et la sortie porte le même bouton
+laiton que l'écran d'accueil, parce que sans en-tête c'est la seule qui existe.
+
+**En français uniquement, et c'est une décision.** Les légendes reposent sur des
+jeux de mots — « aspirateur » contre « inspirateur », « con sultan » tiré de
+« consultant », la chaîne électrique de « branché », « au courant » et « pile » —
+et chaque rendu anglais était la traduction d'une blague plutôt qu'une blague. Le
+reste du jeu demeure bilingue ; cette page-là est privée, dans la langue où elle
+a été écrite. Le sélecteur EN/FR disparaît donc aussi parce qu'il mentirait.
+
+**Rien ne défile tout seul.** Une rotation de six secondes semble accueillante et
+ne l'est pas : deux de ces légendes demandent plus longtemps à lire, donc l'écran
+retirait le texte en pleine phrase. Les pastilles ont grandi à une cible de 26 px
+puisqu'elles portent désormais seules la navigation.
+
+Le titre change avec le visage — réalisé, motivé, codé — parce qu'un titre commun
+aurait eu besoin d'une phrase pour dire ce qu'un mot dit trois fois.
+
+### Les portraits
+
+`assets/portraits/` contient les sources ; `scripts/build-portraits.mjs` les
+recadre en carré, les met à l'échelle et écrit `packages/ui/src/portraits.ts`.
+
+Des **URI de données**, pas des fichiers : l'APK et le fichier HTML unique n'ont
+nulle part où aller les chercher, et un écran de crédits qui exige un serveur
+n'est pas un écran de crédits.
+
+256 pixels plutôt que 160 : la bulle fait environ 132 pixels CSS et un téléphone
+en met deux ou trois de vrais dans chacun, donc une source de 160 arriverait
+visiblement molle sur la plateforme la plus susceptible de la voir. En WebP les
+trois pèsent **37,6 Ko**, soit +56,6 Ko une fois en base64 — le fichier unique
+passe de 818 à 875 Ko.
+
+Le cadrage est réglé par photo, pas au centre : la blague de Philippe est
+l'arbuste au-dessus de sa tête et le bord haut le conserve, et le portrait de
+Claude place le visage haut dans le cadre, faute de quoi ce serait une photo de
+bras croisés.
+
+Un test vérifie que chaque portrait commence bien par `data:image/webp;base64,` et
+dépasse deux kilo-octets. C'est ce qui remarquerait un fichier source manquant
+avant qu'une compilation ne parte avec un disque vide.
+
+---
+
 ## 12. Les tests
 
-**210 tests, un seul `npm test`, rien à démarrer avant.**
+**231 tests, un seul `npm test`, rien à démarrer avant.**
 
 Ce dernier point découle directement du choix de SQLite : les tests d'API
 démarrent le vrai serveur dans le processus, sur un port éphémère, contre une

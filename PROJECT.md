@@ -35,10 +35,40 @@ npm run dev         # the game on http://localhost:5173
 | `npm run dev` | Vite dev server for the web app, proxying `/api` to the server. |
 | `npm run build` | Production bundle into `apps/web/dist`. |
 | `npm run dev:desktop` | Builds and launches the Windows app. |
-| `npm run package:win` | Builds the installer into `apps/desktop/release`. |
-| `npm run build:data` | Re-runs the Natural Earth ETL. Rarely needed; outputs are committed. |
-| `npm test` | The whole suite — 210 tests, nothing to start first. |
+| `npm run package:win` | Windows: installer **and** portable executable. |
+| `npm run package:linux` | Linux: tar.gz archive. |
+| `npm run build:single` | The whole application as one 875 kB `index.html`. |
+| `npm run package:android` | APK, named after the manifest version. |
+| `npm run icons` | Regenerates the icons from the SVGs. |
+| `npm run build:data` | Re-runs the Natural Earth ETL (rare; outputs are committed). |
+| `node scripts/build-portraits.mjs` | Re-encodes the credit portraits from `assets/portraits/`. |
+| `npm test` | The whole suite — 231 tests, nothing to start first. |
 | `npm run typecheck` | `tsc --noEmit` across every package. |
+| **`npm run verify`** | **The actual gate**: typecheck, tests, and both builds. |
+
+### Why `verify` builds instead of stopping at the tests
+
+`tsc` does not read the `<script>` block of a `.svelte` file. The official
+checker, `svelte-check`, refuses TypeScript 7 at startup — not merely at install
+time, and not persuadable with `--legacy-peer-deps`. **The bundler is therefore
+the only thing that type-checks the components**, and it did catch a dead import
+that would otherwise have shipped.
+
+Hence `verify`, which chains all four steps. It is what to run before building
+anything, and it caught half the faults in this project.
+
+That gap cost three bugs, none of them visible to `tsc` or to the tests:
+
+| Symptom | Cause | What caught it |
+|---|---|---|
+| Broken build, `MISSING_EXPORT` | A component imported a deleted constant | `build:single` |
+| A loss printed as `+-15` | A `+` hard-coded in the markup | A player |
+| A link at twice the right size | `font: inherit` overriding `.mono` | A player |
+
+The answer adopted is to **move the rule out of the component** the moment it is
+testable: `formatPoints` lives in `core` with its tests, and so does the
+seven-press logic. What stays in a `.svelte` file is markup and CSS, and scoped
+CSS is still covered by nothing.
 
 ---
 
@@ -618,9 +648,84 @@ run simply goes unsaved. A network failure must never cost you your result.
 
 ---
 
+## 11b. The easter egg
+
+Seven presses on the logo, each within two seconds of the last, open a credits
+screen: three faces, what each of them did, and the way out.
+
+### Why a gesture and not the Konami code
+
+The obvious answer is ruled out immediately: **the APK has no keyboard.** A press
+is the one input a mouse, a finger and a stylus all produce identically, so seven
+presses give a single code path across the five builds instead of one per input
+device. It is also the idiom Android uses for its build number, which gives
+someone poking at the logo a chance of finding it.
+
+The counting rule lives in `packages/core/src/easter.ts`, with its tests. A press
+arriving after the window has lapsed **starts again at one** rather than doing
+nothing: a hesitant player restarts instead of being silently punished. A test
+walks forty presses spread across a session to prove that idle clicking on the
+logo can never add up to the secret.
+
+The only tell arrives on the fourth press: the brass bead in the logo widens its
+halo. Enough that someone already pressing knows they are heard, nothing at all
+to someone who pressed once.
+
+**The logo does not become a button.** It does nothing a keyboard user needs, and
+a silent tab stop in the header would cost every visitor something to hide a joke
+from most of them. The trigger is also inert outside the title screen: tapping
+the header mid-question must not pull the player away from their map.
+
+### A separate room
+
+The screen hides all the chrome — wordmark, language toggle, rule, footer. A page
+you have to knock seven times to reach should feel like a different room, not the
+same room with a panel swapped in. What is left is one face, what that person
+did, three dots and the way out — and the way out wears the same brass button as
+the title screen, because with no header it is the only one there is.
+
+**French only, and that is a decision.** The captions run on puns — *aspirateur*
+against *inspirateur*, *con sultan* out of *consultant*, a chain of electrical
+senses of *branché*, *au courant* and *pile* — and every English rendering was a
+translation of a joke rather than a joke. The rest of the game stays bilingual;
+this page is a private one, in the language it was written in. The EN/FR toggle
+disappears with the rest of the chrome partly because it would be lying.
+
+**Nothing advances by itself.** A six-second rotation sounds friendly and is not:
+two of these captions take longer than that to read, so the screen kept pulling
+the text away mid-sentence. The dots grew to a 26px target now that they carry
+all the navigation alone.
+
+The heading changes with the face — made, motivated, coded — because a shared
+title would have needed a sentence to say what one word says three times.
+
+### The portraits
+
+`assets/portraits/` holds the sources; `scripts/build-portraits.mjs` crops them
+square, scales them and writes `packages/ui/src/portraits.ts`.
+
+**Data URIs**, not files: the APK and the single HTML file have nowhere to fetch
+from, and a credits screen that needs a server is not a credits screen.
+
+256 pixels rather than 160: the bubble is drawn at about 132 CSS pixels and a
+phone puts two or three real ones in each of those, so a 160 source would arrive
+visibly soft on the platform most likely to see it. As WebP the three come to
+**37.6 kB**, which is +56.6 kB once base64'd — the single-file build goes from
+818 kB to 875 kB.
+
+The crop is set per photo rather than centred: Philippe's joke is the shrub above
+his head and the north edge keeps it, and Claude's portrait puts the face high in
+the frame, without which it would be a picture of folded arms.
+
+A test checks that every portrait actually begins `data:image/webp;base64,` and
+runs past two kilobytes. That is what would notice a missing source file before a
+build shipped a blank disc.
+
+---
+
 ## 12. Testing
 
-**210 tests, one `npm test`, nothing to start first.**
+**231 tests, one `npm test`, nothing to start first.**
 
 That last part is a direct benefit of the SQLite choice: the API tests start the
 real server in-process on an ephemeral port against a `:memory:` database and
