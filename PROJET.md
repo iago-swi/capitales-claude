@@ -45,7 +45,7 @@ npm run dev         # le jeu sur http://localhost:5173
 | `npm run icons` | Régénère les icônes depuis les SVG. |
 | `npm run build:data` | Relance l'ETL Natural Earth (rare, les sorties sont versionnées). |
 | `node scripts/build-portraits.mjs` | Réencode les portraits des crédits depuis `assets/portraits/`. |
-| `npm test` | Toute la suite — 231 tests, rien à démarrer avant. |
+| `npm test` | Toute la suite — 240 tests, rien à démarrer avant. |
 | `npm run typecheck` | `tsc --noEmit` sur tous les paquets. |
 | **`npm run verify`** | **Le vrai portail** : typecheck, tests, et les deux compilations. |
 
@@ -747,6 +747,35 @@ ne l'est pas : deux de ces légendes demandent plus longtemps à lire, donc l'é
 retirait le texte en pleine phrase. Les pastilles ont grandi à une cible de 26 px
 puisqu'elles portent désormais seules la navigation.
 
+### Le balayage, pour le téléphone
+
+Sur l'APK, un balayage horizontal fait défiler les visages, circulairement dans
+les deux sens. Des **événements pointeur** plutôt que des événements tactiles :
+un doigt, un stylet et un glissé de souris passent par le même gestionnaire au
+lieu de trois chemins de code.
+
+La décision — balayage, ou simple pression, ou défilement ? — vit dans
+`credits.ts` sous le nom de `swipeFrom`, donc elle est testée. Deux gestes
+doivent être écartés :
+
+- **Une pression** bouge de quelques pixels ; il faut 40 px pour compter.
+- **Un défilement** descend plus qu'il ne traverse. Exiger que la course
+  horizontale l'emporte sur la verticale est ce qui empêche un pouce glissant le
+  long de la page de feuilleter les crédits au passage.
+
+Un doigt qui part vers la gauche amène le visage suivant, comme une page.
+
+Deux détails qui n'ont l'air de rien :
+
+`touch-action: pan-y` sur le conteneur réclame les glissés horizontaux et laisse
+les verticaux à la page. Sans lui, **Android donne le geste latéral à sa propre
+navigation arrière** et les crédits ne le voient jamais.
+
+Un `pointerup` à l'intérieur de la bulle déclenche quand même un `click`. Un
+balayage terminé sur le visage avancerait donc deux fois — un drapeau `swiped`
+absorbe ce clic-là. L'activation au clavier ne le lève jamais, donc Entrée sur la
+bulle focalisée continue de fonctionner.
+
 Le titre change avec le visage — réalisé, motivé, codé — parce qu'un titre commun
 aurait eu besoin d'une phrase pour dire ce qu'un mot dit trois fois.
 
@@ -778,7 +807,7 @@ avant qu'une compilation ne parte avec un disque vide.
 
 ## 12. Les tests
 
-**231 tests, un seul `npm test`, rien à démarrer avant.**
+**240 tests, un seul `npm test`, rien à démarrer avant.**
 
 Ce dernier point découle directement du choix de SQLite : les tests d'API
 démarrent le vrai serveur dans le processus, sur un port éphémère, contre une

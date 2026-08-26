@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { CREDITS, nextCredit } from './credits.js';
+import {
+  CREDITS,
+  nextCredit,
+  prevCredit,
+  SWIPE_MIN_PX,
+  swipeFrom,
+} from './credits.js';
 
 describe('nextCredit', () => {
   it('walks forward and wraps round', () => {
@@ -56,4 +62,62 @@ describe('the credits themselves', () => {
     expect(new Set(CREDITS.map((c) => c.heading)).size).toBe(CREDITS.length);
   });
 
+});
+
+describe('prevCredit', () => {
+  it('walks backward and wraps round', () => {
+    expect(prevCredit(2, 3)).toBe(1);
+    expect(prevCredit(1, 3)).toBe(0);
+    expect(prevCredit(0, 3)).toBe(2);
+  });
+
+  it('never returns a negative index', () => {
+    // The bug the `+ total` exists to stop: -1 % 3 is -1 in JavaScript, which
+    // would index off the front of the array and blank the screen.
+    for (let i = 0; i < 3; i++) {
+      expect(prevCredit(i, 3)).toBeGreaterThanOrEqual(0);
+    }
+    expect(prevCredit(0, 1)).toBe(0);
+    expect(prevCredit(0, 0)).toBe(0);
+  });
+
+  it('undoes nextCredit', () => {
+    for (let i = 0; i < CREDITS.length; i++) {
+      expect(prevCredit(nextCredit(i))).toBe(i);
+    }
+  });
+});
+
+describe('swipeFrom', () => {
+  it('reads a leftward flick as the next face', () => {
+    // The direction a page moves: the finger drags the next one into view.
+    expect(swipeFrom(-80, 0)).toBe('next');
+  });
+
+  it('reads a rightward flick as the previous face', () => {
+    expect(swipeFrom(80, 0)).toBe('previous');
+  });
+
+  it('ignores a tap', () => {
+    expect(swipeFrom(0, 0)).toBe(null);
+    expect(swipeFrom(SWIPE_MIN_PX - 1, 0)).toBe(null);
+    expect(swipeFrom(-(SWIPE_MIN_PX - 1), 0)).toBe(null);
+  });
+
+  it('takes a drag that reaches the threshold exactly', () => {
+    expect(swipeFrom(SWIPE_MIN_PX, 0)).toBe('previous');
+    expect(swipeFrom(-SWIPE_MIN_PX, 0)).toBe('next');
+  });
+
+  it('ignores a scroll dressed as a swipe', () => {
+    // A thumb sliding down the page travels sideways too. If the vertical
+    // travel wins, it was a scroll and the credits should not move.
+    expect(swipeFrom(-60, 200)).toBe(null);
+    expect(swipeFrom(60, -200)).toBe(null);
+    expect(swipeFrom(-60, 60)).toBe(null);
+  });
+
+  it('takes a diagonal that is mostly sideways', () => {
+    expect(swipeFrom(-100, 30)).toBe('next');
+  });
 });

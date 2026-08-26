@@ -42,7 +42,7 @@ npm run dev         # the game on http://localhost:5173
 | `npm run icons` | Regenerates the icons from the SVGs. |
 | `npm run build:data` | Re-runs the Natural Earth ETL (rare; outputs are committed). |
 | `node scripts/build-portraits.mjs` | Re-encodes the credit portraits from `assets/portraits/`. |
-| `npm test` | The whole suite — 231 tests, nothing to start first. |
+| `npm test` | The whole suite — 240 tests, nothing to start first. |
 | `npm run typecheck` | `tsc --noEmit` across every package. |
 | **`npm run verify`** | **The actual gate**: typecheck, tests, and both builds. |
 
@@ -696,6 +696,32 @@ two of these captions take longer than that to read, so the screen kept pulling
 the text away mid-sentence. The dots grew to a 26px target now that they carry
 all the navigation alone.
 
+### Swiping, for the phone
+
+On the APK a horizontal swipe moves through the faces, wrapping in both
+directions. **Pointer events** rather than touch events: a finger, a stylus and a
+mouse drag all go through one handler instead of three code paths.
+
+The decision — swipe, or tap, or scroll? — lives in `credits.ts` as `swipeFrom`,
+where it is tested. Two gestures have to be ruled out:
+
+- **A tap** moves a few pixels; 40 are needed to count.
+- **A scroll** travels further down than across. Requiring the horizontal travel
+  to beat the vertical is what stops a thumb sliding down the page from flicking
+  through the credits on its way past.
+
+A finger moving left brings the next face in, the way a page does.
+
+Two details that look like nothing:
+
+`touch-action: pan-y` on the container claims horizontal drags and leaves
+vertical ones to the page. Without it, **Android hands the sideways flick to its
+own back gesture** and the credits never see it.
+
+A `pointerup` inside the bubble still fires a `click`. A swipe ending on the face
+would therefore advance twice — a `swiped` flag swallows that one click.
+Keyboard activation never raises it, so Enter on the focused bubble still works.
+
 The heading changes with the face — made, motivated, coded — because a shared
 title would have needed a sentence to say what one word says three times.
 
@@ -725,7 +751,7 @@ build shipped a blank disc.
 
 ## 12. Testing
 
-**231 tests, one `npm test`, nothing to start first.**
+**240 tests, one `npm test`, nothing to start first.**
 
 That last part is a direct benefit of the SQLite choice: the API tests start the
 real server in-process on an ephemeral port against a `:memory:` database and

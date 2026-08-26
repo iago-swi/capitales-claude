@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { CREDITS, CREDITS_BACK, nextCredit } from './credits.js';
+  import {
+    CREDITS,
+    CREDITS_BACK,
+    nextCredit,
+    prevCredit,
+    swipeFrom,
+  } from './credits.js';
 
   interface Props {
     /** Leaves the credits and returns to the title. */
@@ -18,6 +24,48 @@
   let index = $state(0);
 
   let person = $derived(CREDITS[index]);
+
+  /**
+   * Swiping, for the phone.
+   *
+   * Pointer events rather than touch events, so the same handler serves a
+   * finger, a stylus and a mouse drag without three code paths. The decision
+   * about what a drag meant lives in `credits.ts`, where it can be tested.
+   */
+  let startX = 0;
+  let startY = 0;
+  /**
+   * Set when a drag turned out to be a swipe, and read by the bubble's click.
+   *
+   * A pointerup inside the bubble still fires a click, so without this a swipe
+   * that happened to end on the face would advance twice. Keyboard activation
+   * never sets it, so Enter on the focused bubble still works.
+   */
+  let swiped = false;
+
+  function onPointerDown(event: PointerEvent): void {
+    startX = event.clientX;
+    startY = event.clientY;
+    swiped = false;
+  }
+
+  function onPointerUp(event: PointerEvent): void {
+    const direction = swipeFrom(event.clientX - startX, event.clientY - startY);
+    if (!direction) return;
+    swiped = true;
+    index =
+      direction === 'next'
+        ? nextCredit(index, CREDITS.length)
+        : prevCredit(index, CREDITS.length);
+  }
+
+  function onBubbleClick(): void {
+    if (swiped) {
+      swiped = false;
+      return;
+    }
+    index = nextCredit(index, CREDITS.length);
+  }
 </script>
 
 <!--
@@ -26,7 +74,12 @@
   way out. A page you have to knock seven times to reach should feel like a
   different room, not the same room with a panel swapped in.
 -->
-<div class="credits">
+<div
+  class="credits"
+  onpointerdown={onPointerDown}
+  onpointerup={onPointerUp}
+  onpointercancel={() => (swiped = false)}
+>
   <p class="heading mono">{person?.heading}</p>
 
   <!--
@@ -36,7 +89,7 @@
   -->
   <button
     class="bubble"
-    onclick={() => (index = nextCredit(index, CREDITS.length))}
+    onclick={onBubbleClick}
     aria-label={person?.name}
   >
     {#each CREDITS as who, i (who.name)}
@@ -80,6 +133,12 @@
     align-items: center;
     gap: 1.1rem;
     width: 100%;
+    /*
+     * Claims horizontal drags for the swipe and leaves vertical ones to the
+     * page. Without it Android hands a sideways flick to its own back gesture
+     * and the credits never see it.
+     */
+    touch-action: pan-y;
   }
 
   /*

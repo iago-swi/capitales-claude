@@ -67,3 +67,35 @@ export function nextCredit(index: number, total: number = CREDITS.length): numbe
   if (total <= 0) return 0;
   return (index + 1) % total;
 }
+
+/** The previous face, wrapping round the other way. */
+export function prevCredit(index: number, total: number = CREDITS.length): number {
+  if (total <= 0) return 0;
+  return (index - 1 + total) % total;
+}
+
+/**
+ * How far a finger must travel before it counts as a swipe.
+ *
+ * Short enough to be comfortable on a phone, long enough that the wobble in a
+ * tap never reads as a flick.
+ */
+export const SWIPE_MIN_PX = 40;
+
+export type Swipe = 'next' | 'previous' | null;
+
+/**
+ * What a drag meant, from how far it went in each direction.
+ *
+ * Two things have to be told apart from a swipe: a tap, which barely moves,
+ * and a scroll, which moves further down the screen than across it. Requiring
+ * the horizontal travel to beat the vertical is what stops a thumb sliding
+ * down the page from flicking through the credits on its way past.
+ *
+ * A finger moving left drags the next face into view, the way a page does.
+ */
+export function swipeFrom(dx: number, dy: number): Swipe {
+  if (Math.abs(dx) < SWIPE_MIN_PX) return null;
+  if (Math.abs(dx) <= Math.abs(dy)) return null;
+  return dx < 0 ? 'next' : 'previous';
+}
