@@ -7,7 +7,6 @@ import {
   PLACE_MAX_PENALTY,
   PLACE_FULL_KM,
   fullPenaltyDistanceFor,
-  scaleFor,
   isCloseEnough,
   placementAccuracy,
   placementPenalty,
@@ -61,25 +60,39 @@ describe('placementAccuracy', () => {
     expect(placementAccuracy(20)).toBe(1);
   });
 
-  it('decreases as the guess gets worse', () => {
-    const values = [0, 100, 500, 1000, 2000].map(placementAccuracy);
-    for (let i = 1; i < values.length; i++) {
-      expect(values[i]!).toBeLessThan(values[i - 1]!);
+  it('decreases as the guess gets worse, then stays at zero', () => {
+    // Strictly falling up to the zero ring, flat on the floor after it. The
+    // floor is the point: there is nothing to collect out there any more.
+    const zero = missDistanceFor();
+    const inside = [0, zero * 0.25, zero * 0.5, zero * 0.9].map((d) =>
+      placementAccuracy(d),
+    );
+    for (let i = 1; i < inside.length; i++) {
+      expect(inside[i]!).toBeLessThan(inside[i - 1]!);
+    }
+    for (const d of [zero, zero * 2, 20000]) {
+      expect(placementAccuracy(d)).toBe(0);
     }
   });
 
   it('actually discriminates, which the first curve did not', () => {
     // The original sqrt curve paid 77% at 1000 km, so every run scored alike.
-    // Stated in fractions of the map, because that is what the player sees: a
-    // drop a twentieth of the way across the frame must be worth far more than
-    // one most of the way across it.
+    // Stated in fractions of the map, because that is what the player sees.
     const reach = 1100;
-    const near = placementAccuracy(0.05 * reach, reach);
-    const far = placementAccuracy(0.8 * reach, reach);
-    expect(near).toBeGreaterThan(0.8);
-    expect(placementAccuracy(0.4 * reach, reach)).toBeLessThan(0.25);
-    expect(far).toBeLessThan(0.06);
-    expect(near / far).toBeGreaterThan(6);
+    expect(placementAccuracy(0.05 * reach, reach)).toBeGreaterThan(0.8);
+    expect(placementAccuracy(0.15 * reach, reach)).toBeLessThan(0.55);
+    expect(placementAccuracy(0.25 * reach, reach)).toBeLessThan(0.2);
+  });
+
+  it('reaches a real zero rather than trailing off towards one', () => {
+    // The fault this replaces. An exponential tail always paid something for a
+    // drop that was never a guess, and that consolation money is what a player
+    // clicking the middle of every country was living on.
+    const reach = 1100;
+    const zero = missDistanceFor(reach);
+    expect(placementAccuracy(zero, reach)).toBe(0);
+    expect(placementAccuracy(zero * 1.5, reach)).toBe(0);
+    expect(placementAccuracy(zero - 1, reach)).toBeGreaterThan(0);
   });
 
   it('never returns a negative accuracy', () => {
@@ -134,9 +147,20 @@ describe('scorePlacement', () => {
     expect(scorePlacement(4000, 0, 1)).toBeLessThan(0);
   });
 
+  it('pays the clock only for a drop that landed on target', () => {
+    // The exploit this closes: answering instantly was worth something even
+    // when the drop was a shrug, so clicking early beat thinking at all.
+    const onTarget = correctDistanceFor() - 1;
+    const off = correctDistanceFor() + 1;
+    expect(scorePlacement(onTarget, QUESTION_MS, 1)).toBeGreaterThan(
+      scorePlacement(onTarget, 0, 1),
+    );
+    expect(scorePlacement(off, QUESTION_MS, 1)).toBe(scorePlacement(off, 0, 1));
+  });
+
   it('pays much less for a worse drop at the same speed', () => {
     const near = scorePlacement(100, QUESTION_MS / 2, 3);
-    const far = scorePlacement(900, QUESTION_MS / 2, 3);
+    const far = scorePlacement(300, QUESTION_MS / 2, 3);
     expect(near).toBeGreaterThan(far * 4);
   });
 
@@ -210,41 +234,36 @@ describe('scaling by country size', () => {
   it('punishes the same error harder in a small country', () => {
     // The fault this fixes: a fixed scale scored 200 km at 68% for the
     // Vatican and, identically, for Russia.
-    const inSwitzerland = placementAccuracy(200, SWITZERLAND);
-    const inCanada = placementAccuracy(200, CANADA);
-    expect(inSwitzerland).toBeLessThan(0.35);
-    expect(inCanada).toBeGreaterThan(0.75);
-    expect(inCanada / inSwitzerland).toBeGreaterThan(2.5);
+    expect(placementAccuracy(200, SWITZERLAND)).toBe(0);
+    expect(placementAccuracy(200, CANADA)).toBeGreaterThan(0.75);
   });
 
-  it('is nearly the same score for the same error relative to the map', () => {
-    // Out by a quarter of the frame costs about the same wherever you are. Not
-    // exactly: the 25 km bullseye allowance is a fixed distance, so it is
-    // proportionally more generous on a small map than a large one.
-    const a = placementAccuracy(scaleFor(FRANCE), FRANCE);
-    const b = placementAccuracy(scaleFor(CANADA), CANADA);
-    expect(Math.abs(a - b) / a).toBeLessThan(0.1);
+  it('puts the zero ring where a played example said it belonged', () => {
+    // 83 km around Bern: far enough that you plainly knew roughly where
+    // Switzerland keeps its capital, close enough that guessing cannot reach.
+    expect(missDistanceFor(SWITZERLAND)).toBeCloseTo(83, 0);
+    expect(scorePlacement(82, QUESTION_MS, 3, SWITZERLAND)).toBeGreaterThan(0);
+    expect(scorePlacement(84, QUESTION_MS, 3, SWITZERLAND)).toBeLessThanOrEqual(0);
   });
 
   it('floors every distance so a micro-state does not demand metre precision', () => {
     // The Vatican's frame is two kilometres across. Without the floor, being on
     // target would mean 300 metres — a pixel-hunting contest, not geography.
-    expect(scaleFor(VATICAN)).toBe(PLACE_FULL_KM);
     expect(correctDistanceFor(VATICAN)).toBe(PLACE_FULL_KM);
     expect(placementAccuracy(20, VATICAN)).toBe(1);
   });
 
-  it('keeps the penalty inside the map, which the last version did not', () => {
-    // The bug this exists to catch. The miss threshold was 4x a scale capped at
-    // 900 km, so it sat at 1800 km for France — off the edge of a frame whose
-    // furthest corner is 1116 km away. A wild guess was free in 157 countries.
+  it('keeps the penalty inside the map, which an earlier version did not', () => {
+    // The miss threshold was once 4x a scale capped at 900 km, so it sat at
+    // 1800 km for France — off the edge of a frame whose furthest corner is
+    // 1116 km away. A wild guess was free in 157 countries.
     for (const reach of [SWITZERLAND, FRANCE, CANADA, 7788]) {
       expect(missDistanceFor(reach)).toBeLessThan(reach);
       expect(placementPenalty(reach, reach)).toBe(-PLACE_MAX_PENALTY);
     }
   });
 
-  it('moves the on-target and miss distances with the country', () => {
+  it('moves the on-target and zero distances with the country', () => {
     expect(correctDistanceFor(SWITZERLAND)).toBeLessThan(correctDistanceFor(CANADA));
     expect(missDistanceFor(SWITZERLAND)).toBeLessThan(missDistanceFor(CANADA));
     // 200 km from Bern is not on target; from Ottawa it is.
@@ -252,10 +271,10 @@ describe('scaling by country size', () => {
     expect(isCloseEnough(200, CANADA)).toBe(true);
   });
 
-  it('falls back to a sensible scale when no map size is given', () => {
-    expect(scaleFor(undefined)).toBe(275);
-    expect(scaleFor(Number.NaN)).toBe(275);
-    expect(scaleFor(0)).toBe(275);
+  it('falls back to a sensible map size when none is given', () => {
+    expect(correctDistanceFor(undefined)).toBe(165);
+    expect(correctDistanceFor(Number.NaN)).toBe(165);
+    expect(correctDistanceFor(0)).toBe(165);
   });
 
   it('penalises a wild guess sooner in a small country', () => {

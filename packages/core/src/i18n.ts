@@ -43,7 +43,6 @@ export type MessageKey =
   | 'identifyMarker'
   | 'survey'
   | 'capitalLocation'
-  | 'projection'
   | 'bestScore'
   | 'noBestYet'
   | 'viewScores'
@@ -105,7 +104,6 @@ export const MESSAGES: Localized<Record<MessageKey, string>> = {
     identifyMarker: 'Identify the marker',
     survey: 'Survey',
     capitalLocation: 'Capital location',
-    projection: 'Azimuthal equal-area',
     bestScore: 'Best score',
     noBestYet: 'No survey filed yet',
     viewScores: 'High scores',
@@ -166,7 +164,6 @@ export const MESSAGES: Localized<Record<MessageKey, string>> = {
     identifyMarker: 'Identifiez le repère',
     survey: 'Relevé',
     capitalLocation: 'Emplacement de la capitale',
-    projection: 'Projection azimutale équivalente',
     bestScore: 'Meilleur score',
     noBestYet: 'Aucun relevé déposé',
     viewScores: 'Meilleurs scores',

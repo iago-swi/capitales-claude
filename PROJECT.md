@@ -37,7 +37,7 @@ npm run dev         # the game on http://localhost:5173
 | `npm run dev:desktop` | Builds and launches the Windows app. |
 | `npm run package:win` | Builds the installer into `apps/desktop/release`. |
 | `npm run build:data` | Re-runs the Natural Earth ETL. Rarely needed; outputs are committed. |
-| `npm test` | The whole suite — 201 tests, nothing to start first. |
+| `npm test` | The whole suite — 203 tests, nothing to start first. |
 | `npm run typecheck` | `tsc --noEmit` across every package. |
 
 ---
@@ -398,86 +398,101 @@ control or they do not arrive.
 
 ```
 reach    = distance from the capital to the furthest corner of the frame
-distance = haversine(drop, capital)                    great-circle kilometres
-accuracy = distance <= 25 ? 1 : exp(-(distance - 25) / (0.25 * reach))
-points   = round((100 + speedBonus) * accuracy * multiplier)
-         = -round(100 * progress towards the corner)   beyond 0.45 * reach
+target   = max(25 km, 0.15 * reach)           radius of the red circle
+zero     = 2 * target                         nothing at all past this
+distance = haversine(drop, capital)           great-circle kilometres
+accuracy = 1 if distance <= 25 km
+         = 1 - (distance - 25) / (zero - 25)  down to exactly 0 at the zero ring
+points   = round((100 + speed) * accuracy * multiplier)
+           speed counts ONLY if the drop landed in the target
+         = -round(100 * progress towards the corner)   past the zero ring
 ```
 
-**This scale got it wrong twice, both times for the same reason: calibrating in
-absolute kilometres an action the player performs inside a bounded frame.**
+**This scale got it wrong three times, and playing found every one of them.**
 
-The first version used `sqrt(1 - d/2500)`. Far too kind: 1000 km still paid 77%,
-so every run landed in the same band. The second moved to exponential decay with
-negative points beyond 1500 km — and the scores stayed clustered, between 1200
-and 1400.
+The first version used `sqrt(1 - d/2500)`: far too kind, every run landed in the
+same band. The second moved to exponential decay with negative points beyond
+1500 km — but the map shows one country, and **the furthest corner of the French
+frame is 1116 km away**: the threshold sat off screen, unreachable in 157 of 193
+countries. The third fixed the frame of reference by working in fractions of the
+map's reach. A subtler fault survived, and measurement is what showed it.
 
-Measurement showed why. **The map shows one country and nothing else.** You
-cannot drop a marker 1800 km from Paris, because 1800 km from Paris is not on
-screen: the furthest corner of the French frame is 1116 km away. The penalty
-threshold sat off the edge of the map. Of 193 countries, **157 could not trigger
-negative points at all** — the code was correct and its constant was
-unreachable. A wild guess stayed free, and sloppiness paid nearly as well as
-care.
+#### What knowing nothing used to pay
 
-Every distance is therefore now a **fraction of the frame's reach** — of the
-largest error the player can make given what they can see. That formulation
-*cannot* reproduce the failure: the scale is, by construction, exactly as wide
-as the mistakes that are possible.
+| Strategy | Before | Now |
+|---|---|---|
+| Click the centre of the frame, instantly | **1111** | 606 |
+| Click the country's centroid | 1105 | 616 |
+| Click at random in the frame | 342 | 13 |
+
+Eleven hundred points without knowing a single capital. Two causes:
+
+**Exponential decay never reached zero.** There was always a little something to
+collect for a drop that was not an answer, and small change of exactly that kind
+is what a guesser lives on. The curve now falls in a straight line to **exactly
+zero** at twice the target radius — 83 km around Bern. Past it, points go
+negative.
+
+**The clock was paying for shrugs.** Answering instantly was worth points even
+when the drop was placed anywhere at all, so clicking early beat thinking. The
+speed bonus is now paid **only when the drop lands in the target**. Answering
+fast is still a way of showing you knew; it is no longer a substitute for
+knowing.
+
+Checked directly: a precise but very slow player scores **1499**, a sloppy but
+instant one **357**. Speed can no longer beat precision.
+
+#### What remains, and why it is correct
+
+Centre-clicking still pays 606. Measured across all 193 countries, that gesture
+produces a mean error of **24.9% of the frame** — which is exactly the accuracy
+of an honestly mediocre player. The trick does not beat an average player by
+cunning: it *is* an average player, because capitals really are often central.
+
+Tightening further was tried and rejected on the measurements. A falloff exponent
+of 1.75 drops the trick to 502, but also drops a good player from 1838 to 1609:
+the trick-to-good-player ratio does not move (0.33 against 0.31). No curve can
+tell "25% out because I clicked the middle" from "25% out because I roughly
+knew". Tightening would only punish honest players, so it was not kept.
 
 | | Vatican | Switzerland | France | Canada | Russia |
 |---|---|---|---|---|---|
 | Frame reach | 2 km | 278 km | 1116 km | 5977 km | 7788 km |
-| Scale (25%) | 25 km | 70 km | 279 km | 1494 km | 1947 km |
-| On target (15%) | 25 km | 42 km | 167 km | 897 km | 1168 km |
-| Miss (45%) | — | 125 km | 502 km | 2690 km | 3505 km |
+| Target (15%) | 25 km | 42 km | 167 km | 897 km | 1168 km |
+| Zero (2x target) | 50 km | **83 km** | 335 km | 1793 km | 2337 km |
 | -100 at the corner | — | 278 km | 1116 km | 5977 km | 7788 km |
-| **Accuracy at 200 km** | 100% | **8%** | 54% | **89%** | 92% |
+| Accuracy at 200 km | 100% | **0%** | 33% | 80% | 85% |
 
-That is the answer to "being 200 km out in Switzerland is worse than being
-200 km out in Canada": 8% against 89%. And the rule fits in a sentence a player
-can hold in their head — **the corner of the map costs you a hundred**.
+The 83 km around Bern came from a played example, not a formula. The rule fits in
+a sentence: **outside twice the target, nothing; at the corner of the map, minus
+a hundred.**
 
 A 25 km floor protects the micro-states: the Vatican's frame is two kilometres
-across, and without it "on target" would mean 300 metres, which is a
-pixel-hunting contest rather than a geography question. The twenty countries
-whose frame fits inside 100 km — Vatican through Luxembourg — simply cannot be
-missed, which is the right answer.
+across, and without it "on target" would mean 300 metres.
 
-Placing nothing at all costs the full -100: running the clock down is worse than
-a bad guess, because it is not an attempt. The penalty deliberately ignores the
-streak multiplier — a player on a good run should not be punished harder for one
-bad question than a player having a bad one.
+Placing nothing at all costs the full -100. The penalty deliberately ignores the
+streak multiplier — a player on a good run should not be punished harder than one
+having a bad run.
 
-Modelled over five player profiles, 400 runs each:
+| Profile | Total score |
+|---|---|
+| expert (3% out) | 2826 |
+| good (10%) | 1838 |
+| average (25%) | 430 |
+| weak (45%) | **-33** |
 
-| Profile | Total score | Before |
-|---|---|---|
-| expert | 2803 | ~1400 |
-| good | 1919 | ~1300 |
-| average | 759 | ~1250 |
-| weak | 230 | ~1200 |
-| random | **-257** | ~1200 |
-
-The reach travels on the `PLACE` event rather than being looked up in `core`.
-The event carries what the player was actually looking at, and `packages/core`
-still knows nothing about geometry.
-
-A perfect instant drop on a maxed streak is worth 400, exactly like a perfect
-instant naming answer. Neither mode looks inflated beside the other, even though
-the leaderboards are separate.
+A perfect instant drop on a maxed streak is still worth 400, exactly like a
+perfect instant naming answer.
 
 #### The test that was missing
 
-No unit test could have caught this, and it is the most useful lesson in the
-project. `packages/core` deliberately knows nothing about geometry: it does not
-know how much world is on screen, so it could not know its threshold was outside
-the frame. `packages/geo` knows the frame but not the scale. **The bug lived in
-the gap between two packages that were both correctly tested.**
-
-The new test therefore lives in `geo`, imports `missDistanceFor` from `core`,
-and sweeps all 193 real countries checking that the miss threshold falls inside
-the frame. It is the only place where the two halves of the fact meet.
+No unit test could have caught the frame-of-reference error, and it is the most
+useful lesson in the project. `packages/core` deliberately knows nothing about
+geometry: it does not know how much world is on screen, so it could not know its
+threshold was outside the frame. `packages/geo` knows the frame but not the
+scale. **The bug lived in the gap between two packages that were both correctly
+tested.** The test therefore lives in `geo`, imports `missDistanceFor` from
+`core`, and sweeps all 193 real countries.
 
 ### Two summaries, because they are two games
 
@@ -486,10 +501,15 @@ placing that is simply wrong: you answered all ten, and eight was the number of
 drops that landed on target. Worse, the statistic that describes a placing run
 — how far off you were — appeared nowhere.
 
-Placing now leads with it: **"average error 499 km · 4 / 10 on target · best
-streak 3"**. Timeouts are left out of the average rather than counted as some
-invented huge distance, which would swamp it with a number the player never
-chose.
+Placing now leads with it: **"average error 499 km · 4 / 10 on target"**.
+Timeouts are left out of the average rather than counted as some invented huge
+distance, which would swamp it with a number the player never chose.
+
+Best streak left that summary and stays with naming. The two numbers that
+describe a placing run are the average error and the count that landed in the
+target; a third, about runs of those, is noise on a line already doing enough
+work. The `xN` multiplier stays on screen during play, where it earns its
+place.
 
 **The leaderboards are separate.** Naming and placing are different skills on
 different curves; one board mixing them would rank nobody meaningfully. The
@@ -586,7 +606,7 @@ run simply goes unsaved. A network failure must never cost you your result.
 
 ## 12. Testing
 
-**201 tests, one `npm test`, nothing to start first.**
+**203 tests, one `npm test`, nothing to start first.**
 
 That last part is a direct benefit of the SQLite choice: the API tests start the
 real server in-process on an ephemeral port against a `:memory:` database and

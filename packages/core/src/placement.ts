@@ -20,8 +20,25 @@ const DEG = Math.PI / 180;
  * construction, exactly as wide as the mistakes a player can actually make.
  */
 export const PLACE_TARGET_FRACTION = 0.15;
-export const PLACE_SCALE_FRACTION = 0.25;
-export const PLACE_MISS_FRACTION = 0.45;
+
+/**
+ * The zero ring sits at this many on-target distances from the capital.
+ *
+ * Past it a drop is worth nothing at all, and then less than nothing. Two was
+ * chosen from a played example rather than a formula: 83 km around Bern, which
+ * is far enough that you plainly knew roughly where Switzerland keeps its
+ * capital, and close enough that guessing cannot wander into it.
+ */
+export const PLACE_ZERO_MULTIPLE = 2;
+
+/**
+ * Shape of the fall from a bullseye to the zero ring.
+ *
+ * 1 is linear. The earlier curve was exponential, which never actually reaches
+ * zero — there was always a consolation payment for being vaguely in the
+ * region, and consolation payments are exactly what a guesser lives on.
+ */
+export const PLACE_FALLOFF = 1;
 
 /**
  * Inside this, the drop is a bullseye and earns everything.
@@ -51,27 +68,27 @@ function reach(reachKm?: number): number {
 }
 
 /**
- * How fast the points fall away, in kilometres.
+ * Within this, the drop is on target: it keeps a streak, counts in n/10, and is
+ * the only thing that earns the speed bonus.
  *
- * Scoring relative to what is on screen is what makes two countries comparable:
- * 200 km from Bern means you missed Switzerland entirely, while 200 km from
- * Ottawa is a good guess, and the reach of each map says so by itself.
+ * A fraction of what is on screen, because that is what makes two countries
+ * comparable: 200 km from Bern means you missed Switzerland entirely, while
+ * 200 km from Ottawa is a good guess, and the reach of each map says so.
  */
-export function scaleFor(reachKm?: number): number {
-  return Math.max(PLACE_FULL_KM, reach(reachKm) * PLACE_SCALE_FRACTION);
-}
-
-/** Within this, the drop is on target: it keeps a streak and counts in n/10. */
 export function correctDistanceFor(reachKm?: number): number {
   return Math.max(PLACE_FULL_KM, reach(reachKm) * PLACE_TARGET_FRACTION);
 }
 
-/** Past this, a drop stops being an attempt and starts costing points. */
+/**
+ * The zero ring: no points at all here, and negative points past it.
+ *
+ * A real edge rather than an asymptote. The curve it ends used to trail off
+ * towards zero without arriving, so a drop that was nowhere near still paid
+ * something, and a player who clicked the middle of every country without
+ * knowing a single capital collected 1111 points a run.
+ */
 export function missDistanceFor(reachKm?: number): number {
-  return Math.max(
-    correctDistanceFor(reachKm) * 2,
-    reach(reachKm) * PLACE_MISS_FRACTION,
-  );
+  return correctDistanceFor(reachKm) * PLACE_ZERO_MULTIPLE;
 }
 
 /** Where the penalty reaches its worst: the far corner of the map. */
@@ -103,21 +120,26 @@ export function distanceKm(a: LonLat, b: LonLat): number {
 }
 
 /**
- * The fraction of a question's points a drop earns, from 1 down towards 0.
+ * The fraction of a question's points a drop earns, from 1 down to a real 0.
  *
- * Exponential rather than linear or square-root: knowing a capital to within a
- * city is a different achievement from knowing its continent, and the curve has
- * to say so. At a quarter of the map's reach a drop keeps 37%, at half 14%, at
- * the far corner 2%.
+ * Full inside the bullseye, then straight down to nothing at the zero ring.
+ * The straight line matters less than where it ends: an exponential tail keeps
+ * paying for drops that were never a guess, and that tail is what a player
+ * exploiting the shape of countries was living on.
  */
 export function placementAccuracy(distance: number, reachKm?: number): number {
   const d = Math.max(0, distance);
   if (d <= PLACE_FULL_KM) return 1;
-  return Math.exp(-(d - PLACE_FULL_KM) / scaleFor(reachKm));
+
+  const zero = missDistanceFor(reachKm);
+  if (d >= zero) return 0;
+
+  const t = (d - PLACE_FULL_KM) / (zero - PLACE_FULL_KM);
+  return (1 - t) ** PLACE_FALLOFF;
 }
 
 /**
- * What a drop beyond the miss distance costs, as a negative number.
+ * What a drop beyond the zero ring costs, as a negative number.
  *
  * Ramps from nothing at the boundary to the full penalty at the far corner of
  * the frame, so there is no cliff to fall off — a drop that is merely poor is
@@ -155,12 +177,16 @@ export function scorePlacement(
   totalMs: number = QUESTION_MS,
 ): number {
   if (distance === null) return -PLACE_MAX_PENALTY;
-  if (distance > missDistanceFor(reachKm)) {
+  if (distance >= missDistanceFor(reachKm)) {
     return placementPenalty(distance, reachKm);
   }
 
+  // The clock pays only for drops that landed in the target. Answering fast is
+  // a way of showing you knew; it is not a substitute for knowing, and a bonus
+  // that pays out on a shrug rewards clicking early over thinking at all.
+  const onTarget = distance <= correctDistanceFor(reachKm);
   const remaining = clamp(remainingMs, 0, totalMs);
-  const speedBonus = (MAX_SPEED_BONUS * remaining) / totalMs;
+  const speedBonus = onTarget ? (MAX_SPEED_BONUS * remaining) / totalMs : 0;
 
   return Math.round(
     (BASE_POINTS + speedBonus) *

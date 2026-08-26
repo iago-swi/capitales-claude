@@ -42,7 +42,7 @@ npm run dev         # le jeu sur http://localhost:5173
 | `npm run package:linux` | Linux : archive tar.gz. |
 | `npm run icons` | Régénère les icônes depuis les SVG. |
 | `npm run build:data` | Relance l'ETL Natural Earth (rare, les sorties sont versionnées). |
-| `npm test` | Toute la suite — 201 tests, rien à démarrer avant. |
+| `npm test` | Toute la suite — 203 tests, rien à démarrer avant. |
 | `npm run typecheck` | `tsc --noEmit` sur tous les paquets. |
 
 ---
@@ -428,88 +428,104 @@ rangée du même contrôle, ou elles n'arrivent pas.
 
 ```
 portee    = distance capitale -> coin le plus lointain du cadre
-distance  = haversine(repère, capitale)                kilomètres orthodromiques
-précision = distance <= 25 ? 1 : exp(-(distance - 25) / (0,25 × portée))
-points    = arrondi((100 + bonusVitesse) × précision × multiplicateur)
-          = -arrondi(100 × avancement vers le coin)    au-delà de 0,45 × portée
+cible     = max(25 km, 0,15 x portee)          rayon du cercle rouge
+zero      = 2 x cible                          plus rien au-dela
+distance  = haversine(repere, capitale)        kilometres orthodromiques
+precision = 1 si distance <= 25 km
+          = 1 - (distance - 25) / (zero - 25)  jusqu'a 0 pile au cercle zero
+points    = arrondi((100 + vitesse) x precision x multiplicateur)
+            la vitesse ne compte QUE si le repere est dans la cible
+          = -arrondi(100 x avancement vers le coin)   au-dela du cercle zero
 ```
 
-**Ce barème s'est trompé deux fois, et les deux fois pour la même raison :
-calibrer en kilomètres absolus une action que le joueur accomplit dans un cadre
-borné.**
+**Ce barème s'est trompé trois fois, et chaque erreur a été trouvée en jouant.**
 
-La première version utilisait `racine(1 - d/2500)`. Beaucoup trop clémente :
-1000 km payaient encore 77 %, donc toutes les parties tombaient dans la même
-bande. La deuxième est passée à la décroissance exponentielle avec des points
-négatifs au-delà de 1500 km — et les scores sont restés groupés, entre 1200 et
-1400.
+La première version utilisait `racine(1 - d/2500)` : beaucoup trop clémente,
+toutes les parties tombaient dans la même bande. La deuxième est passée à la
+décroissance exponentielle avec des points négatifs au-delà de 1500 km — mais la
+carte n'affiche qu'un pays, et **le coin le plus éloigné du cadre français est à
+1116 km** : le seuil était hors-champ, inatteignable dans 157 pays sur 193. La
+troisième a corrigé le référentiel en raisonnant en fractions de la portée du
+cadre. Restait un défaut plus subtil, et c'est la mesure qui l'a montré.
 
-La mesure a montré pourquoi. **La carte n'affiche qu'un pays.** Vous ne pouvez
-pas poser un repère à 1800 km de Paris, parce que 1800 km de Paris n'est pas à
-l'écran : le coin le plus éloigné du cadre français est à 1116 km. Le seuil de
-pénalité était hors-champ. Sur les 193 pays, **157 ne pouvaient pas déclencher de
-points négatifs** — le code était juste, sa constante était inatteignable. Un tir
-au hasard restait gratuit, et l'à-peu-près payait presque autant que le soin.
+#### Ce que rapportait le fait de ne rien savoir
 
-Toutes les distances sont donc désormais des **fractions de la portée du cadre**,
-c'est-à-dire de l'erreur maximale que le joueur peut commettre compte tenu de ce
-qu'il voit. Cette formulation ne *peut pas* reproduire la panne : le barème est
-par construction exactement aussi large que les erreurs possibles.
+| Stratégie | Avant | Maintenant |
+|---|---|---|
+| Cliquer au centre du cadre, instantanément | **1111** | 606 |
+| Cliquer au centroïde du pays | 1105 | 616 |
+| Cliquer au hasard dans le cadre | 342 | 13 |
+
+Mille cent points sans connaître une seule capitale. Deux causes :
+
+**La décroissance exponentielle n'atteignait jamais zéro.** Il restait toujours
+une petite somme à ramasser pour un repère qui n'était pas une réponse, et c'est
+exactement de cette monnaie qu'un joueur au hasard vit. La courbe descend
+maintenant en ligne droite jusqu'à **zéro pile**, à deux fois le rayon de la
+cible — 83 km autour de Berne. Au-delà, les points sont négatifs.
+
+**Le chrono payait les haussements d'épaules.** Cliquer vite valait des points
+même quand le repère était posé n'importe où, donc cliquer tôt battait réfléchir.
+Le bonus de vitesse n'est désormais versé **que si le repère tombe dans la
+cible**. Répondre vite reste une façon de montrer qu'on savait ; ce n'est plus un
+substitut au fait de savoir.
+
+Vérification directe : un joueur précis mais très lent marque **1499**, un joueur
+bâclé mais instantané **357**. La vitesse ne peut plus l'emporter sur la
+précision.
+
+#### Ce qui reste, et pourquoi c'est correct
+
+Cliquer au centre rapporte encore 606. Mesuré sur les 193 pays, ce geste produit
+un écart moyen de **24,9 % du cadre** — c'est-à-dire exactement la précision d'un
+joueur médiocre honnête. La combine ne bat pas un joueur moyen par ruse : elle
+*est* un joueur moyen, parce que les capitales sont réellement souvent centrales.
+
+Durcir davantage a été essayé et rejeté sur mesure. Une décroissance en
+puissance 1,75 fait tomber la combine à 502, mais fait aussi tomber un bon joueur
+de 1838 à 1609 : le rapport combine / bon joueur ne bouge pas (0,33 contre 0,31).
+Aucune courbe ne peut distinguer « 25 % d'écart parce que j'ai cliqué au milieu »
+de « 25 % d'écart parce que je savais à peu près ». Le durcissement ne punirait
+que les joueurs honnêtes, donc il n'a pas été retenu.
 
 | | Vatican | Suisse | France | Canada | Russie |
 |---|---|---|---|---|---|
 | Portée du cadre | 2 km | 278 km | 1116 km | 5977 km | 7788 km |
-| Échelle (25 %) | 25 km | 70 km | 279 km | 1494 km | 1947 km |
-| Dans la cible (15 %) | 25 km | 42 km | 167 km | 897 km | 1168 km |
-| Raté (45 %) | — | 125 km | 502 km | 2690 km | 3505 km |
+| Cible (15 %) | 25 km | 42 km | 167 km | 897 km | 1168 km |
+| Zéro (2 × cible) | 50 km | **83 km** | 335 km | 1793 km | 2337 km |
 | −100 au coin | — | 278 km | 1116 km | 5977 km | 7788 km |
-| **Précision à 200 km** | 100 % | **8 %** | 54 % | **89 %** | 92 % |
+| Précision à 200 km | 100 % | **0 %** | 33 % | 80 % | 85 % |
 
-C'est la réponse à « être à 200 km en Suisse est plus grave qu'être à 200 km au
-Canada » : 8 % contre 89 %. Et la règle tient en une phrase que le joueur peut
-garder en tête — **le coin de la carte coûte cent points**.
+Les 83 km autour de Berne viennent d'un exemple joué, pas d'une formule. La règle
+tient en une phrase : **hors du double de la cible, plus rien ; au coin de la
+carte, moins cent.**
 
 Un plancher de 25 km protège les micro-États : le cadre du Vatican fait deux
-kilomètres de large, et sans plancher « dans la cible » vaudrait 300 mètres,
-c'est-à-dire un concours de visée au pixel et non une question de géographie. Les
-vingt pays dont le cadre tient sous 100 km — du Vatican au Luxembourg — ne
-peuvent tout simplement pas être ratés, ce qui est la bonne réponse.
+kilomètres de large, et sans plancher « dans la cible » vaudrait 300 mètres.
 
-Ne rien poser du tout coûte le −100 plein : laisser filer le chrono est pire
-qu'une mauvaise réponse, parce que ce n'est pas une tentative. La pénalité ignore
-volontairement le multiplicateur de série — un joueur en bonne série ne doit pas
-être puni plus durement pour une mauvaise question qu'un joueur en mauvaise
-passe.
+Ne rien poser du tout coûte le −100 plein. La pénalité ignore volontairement le
+multiplicateur de série — un joueur en bonne série ne doit pas être puni plus
+durement qu'un joueur en mauvaise passe.
 
-Modélisé sur cinq profils de joueur, sur 400 parties chacun :
+| Profil | Score total |
+|---|---|
+| expert (3 % d'écart) | 2826 |
+| bon (10 %) | 1838 |
+| moyen (25 %) | 430 |
+| faible (45 %) | **−33** |
 
-| Profil | Score total | Avant |
-|---|---|---|
-| expert | 2803 | ~1400 |
-| bon | 1919 | ~1300 |
-| moyen | 759 | ~1250 |
-| faible | 230 | ~1200 |
-| au hasard | **−257** | ~1200 |
-
-La portée voyage sur l'événement `PLACE` plutôt que d'être cherchée dans `core`.
-L'événement transporte ce que le joueur avait réellement sous les yeux, et
-`packages/core` continue de tout ignorer de la géométrie.
-
-Un placement parfait et instantané sur série maximale vaut 400, exactement comme
-une bonne réponse instantanée en mode nommer. Aucun des deux modes ne paraît
-gonflé à côté de l'autre, alors même que les classements sont séparés.
+Un placement parfait et instantané sur série maximale vaut toujours 400, comme
+une bonne réponse instantanée en mode nommer.
 
 #### Le test qui manquait
 
-Aucun test unitaire ne pouvait attraper ça, et c'est la leçon la plus utile du
-projet. `packages/core` ignore délibérément la géométrie : il ne sait pas combien
-de monde est affiché, donc il ne pouvait pas savoir que son seuil était hors du
-cadre. `packages/geo` connaît le cadre mais pas le barème. **Le bug vivait dans
-le vide entre deux paquets tous les deux correctement testés.**
-
-Le nouveau test vit donc dans `geo`, importe `missDistanceFor` depuis `core`, et
-balaie les 193 pays réels en vérifiant que le seuil de raté tombe à l'intérieur
-du cadre. C'est le seul endroit où les deux moitiés du fait se rencontrent.
+Aucun test unitaire ne pouvait attraper l'erreur de référentiel, et c'est la
+leçon la plus utile du projet. `packages/core` ignore délibérément la géométrie :
+il ne sait pas combien de monde est affiché, donc il ne pouvait pas savoir que
+son seuil était hors du cadre. `packages/geo` connaît le cadre mais pas le
+barème. **Le bug vivait dans le vide entre deux paquets tous les deux
+correctement testés.** Le test vit donc dans `geo`, importe `missDistanceFor`
+depuis `core`, et balaie les 193 pays réels.
 
 ### Deux résumés, parce que ce sont deux jeux
 
@@ -520,9 +536,15 @@ statistique qui décrit réellement une partie de placement — l'écart — n'�
 affichée nulle part.
 
 Le mode placer commence désormais par elle : **« écart moyen 499 km · 4 / 10 dans
-la cible · meilleure série 3 »**. Les dépassements de temps sont exclus de la
-moyenne plutôt que comptés comme une distance énorme inventée, qui la noierait
-sous un chiffre que le joueur n'a jamais choisi.
+la cible »**. Les dépassements de temps sont exclus de la moyenne plutôt que
+comptés comme une distance énorme inventée, qui la noierait sous un chiffre que
+le joueur n'a jamais choisi.
+
+La meilleure série a disparu de ce résumé et reste au mode nommer. Les deux
+nombres qui décrivent une partie de placement sont l'écart moyen et le nombre de
+repères dans la cible ; un troisième, portant sur les suites de ces repères, est
+du bruit sur une ligne qui en fait déjà assez. Le multiplicateur `×N` reste
+affiché pendant la partie, où il sert à quelque chose.
 
 **Les classements sont distincts.** Nommer et placer sont deux compétences sur
 deux courbes ; un classement mélangeant les deux ne classerait personne. La table
@@ -633,7 +655,7 @@ d'ordinateur portable.
 
 ## 12. Les tests
 
-**201 tests, un seul `npm test`, rien à démarrer avant.**
+**203 tests, un seul `npm test`, rien à démarrer avant.**
 
 Ce dernier point découle directement du choix de SQLite : les tests d'API
 démarrent le vrai serveur dans le processus, sur un port éphémère, contre une

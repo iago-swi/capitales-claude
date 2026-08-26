@@ -241,6 +241,11 @@
           naming vocabulary: in placing you answered all ten, and how close you
           got is the whole story — so that leads, and "on target" says plainly
           what the count actually counts.
+
+          Best streak is a naming statistic and stays there. In placing, the
+          two numbers that describe the run are the average error and the count
+          that landed in the target; a third number about runs of them is noise
+          on a line that is already doing enough work.
         -->
         <p class="sub">
           {#if placing}
@@ -249,8 +254,7 @@
               {msg('km')} ·
             {/if}
             {game.state.correctCount} / {QUESTION_COUNT}
-            {msg('onTarget')} · {msg('bestStreak')}
-            {game.state.bestStreak}
+            {msg('onTarget')}
           {:else}
             {game.state.correctCount} / {QUESTION_COUNT}
             {msg('answered')} · {msg('bestStreak')}
@@ -410,17 +414,14 @@
 
   <footer class="bar foot" class:empty={game.state.phase !== 'ready'}>
     {#if game.state.phase === 'ready'}
-      <span class="mono">
+      <span class="mono best">
         {#if game.bestScore}
-          {msg('bestScore')}
-          <strong>{game.bestScore.score}</strong> · {game.bestScore.playerName}
+          <span class="nb">{msg('bestScore')}</span>
+          <span class="nb"><strong>{game.bestScore.score}</strong> · {game.bestScore.playerName}</span>
         {:else}
           {msg('noBestYet')}
         {/if}
       </span>
-      <span></span>
-      <span></span>
-      <span class="mono">{msg('projection')}</span>
     {/if}
   </footer>
 </div>
@@ -472,16 +473,51 @@
     scrollbar-width: thin;
   }
 
-  .foot {
-    grid-template-columns: 1fr auto auto 1fr;
+  /* Both classes: a later `.bar` rule at 940px sets two columns and would win
+     on source order otherwise, leaving an empty track. */
+  .bar.foot {
+    /*
+     * One cell. It used to be four — the best score, two blank spacers, and a
+     * note naming the projection — and on a phone the spacers stole width from
+     * the only two cells that had any, so both wrapped mid-phrase. The note is
+     * gone and the spacers with it.
+     */
+    grid-template-columns: 1fr;
     min-height: 1.2rem;
+  }
+
+  /* Keeps "MEILLEUR SCORE" and "1667 · IAGO" each in one piece. */
+  .nb {
+    white-space: nowrap;
+  }
+
+  .best {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 0.4rem;
+  }
+
+  /*
+   * Below this the two of them cannot sit side by side without one of them
+   * breaking badly, so they stop trying and stack, centred.
+   */
+  /*
+   * Selectors carry both classes on purpose. A later `.bar` rule inside the
+   * 940px breakpoint sets two columns, and at equal specificity the later rule
+   * wins — so matching only `.foot` here silently lost.
+   */
+  @media (max-width: 560px) {
+    .bar.foot {
+      justify-items: center;
+    }
+
+    .bar.foot .best {
+      justify-content: center;
+    }
   }
   /* Nothing to show outside the title screen; on a phone that is 30px of air. */
   .foot.empty {
     display: none;
-  }
-  .foot .mono:last-child {
-    justify-self: end;
   }
 
   /* ── Title ─────────────────────────────────────────────── */
